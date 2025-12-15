@@ -7,7 +7,7 @@ import { useAIPrediction, AIPrediction, AIStats } from '@/hooks/useAIPrediction'
 import { supabase } from '@/integrations/supabase/client';
 import { formatBrasiliaTime } from '@/components/BrasiliaClockDisplay';
 
-const POLL_INTERVAL = 3000; // Poll every 3 seconds
+const POLL_INTERVAL = 1500; // Poll every 1.5 seconds for faster updates
 const MAX_GALES = 2; // Maximum number of gales
 
 interface BlazeAPIGame {
@@ -33,6 +33,9 @@ export function useBlazeData() {
   
   // Track the round number when the last prediction cycle completed
   const lastCompletedRoundNumber = useRef<number | null>(null);
+  
+  // State for showing rounds remaining until next prediction
+  const [roundsUntilNextPrediction, setRoundsUntilNextPrediction] = useState<number>(0);
   
   // Wrapper to save to localStorage
   const setPredictionInterval = (value: number) => {
@@ -276,6 +279,14 @@ export function useBlazeData() {
     const lastRound = currentRounds[currentRounds.length - 1];
     const currentRoundNumber = lastRound.number;
     
+    // Calculate rounds until next prediction
+    let roundsRemaining = 0;
+    if (lastCompletedRoundNumber.current !== null) {
+      const roundsPassed = Math.abs(currentRoundNumber - lastCompletedRoundNumber.current);
+      roundsRemaining = Math.max(0, predictionInterval - roundsPassed);
+    }
+    setRoundsUntilNextPrediction(roundsRemaining);
+    
     // Strict guards to prevent multiple predictions
     if (predictionState !== 'analyzing') {
       console.log('Não gerando - não está em modo análise:', predictionState);
@@ -293,14 +304,9 @@ export function useBlazeData() {
     }
     
     // Check rounds passed since last completed prediction
-    if (lastCompletedRoundNumber.current !== null) {
-      const roundsPassed = Math.abs(currentRoundNumber - lastCompletedRoundNumber.current);
-      console.log(`Rodadas desde última previsão concluída: ${roundsPassed} (necessário: ${predictionInterval})`);
-      
-      if (roundsPassed < predictionInterval) {
-        console.log(`Aguardando ${predictionInterval - roundsPassed} rodada(s) antes de nova previsão`);
-        return;
-      }
+    if (lastCompletedRoundNumber.current !== null && roundsRemaining > 0) {
+      console.log(`Aguardando ${roundsRemaining} rodada(s) antes de nova previsão`);
+      return;
     }
     
     // Lock prediction generation
@@ -558,6 +564,7 @@ export function useBlazeData() {
     // Interval settings
     predictionInterval,
     setPredictionInterval,
+    roundsUntilNextPrediction,
     // Bankroll tracking
     baseBet,
     setBaseBet,

@@ -8,9 +8,10 @@ interface SignalPanelProps {
   signals: PredictionSignal[];
   predictionState: PredictionState;
   currentPrediction: PredictionSignal | null;
+  roundsUntilNextPrediction?: number;
 }
 
-export function SignalPanel({ signals, predictionState, currentPrediction }: SignalPanelProps) {
+export function SignalPanel({ signals, predictionState, currentPrediction, roundsUntilNextPrediction = 0 }: SignalPanelProps) {
   const historySignals = [...signals]
     .reverse()
     .filter(s => s.status !== 'pending')
@@ -50,9 +51,20 @@ export function SignalPanel({ signals, predictionState, currentPrediction }: Sig
               Analisando padrões...
             </span>
           </div>
-          <p className="text-xs text-muted-foreground text-center mt-2">
-            Aguarde o próximo sinal
-          </p>
+          {roundsUntilNextPrediction > 0 ? (
+            <div className="mt-3 text-center">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/20 border border-primary/30">
+                <span className="text-2xl font-bold text-primary">{roundsUntilNextPrediction}</span>
+                <span className="text-xs text-primary/80">
+                  {roundsUntilNextPrediction === 1 ? 'rodada' : 'rodadas'} restante{roundsUntilNextPrediction !== 1 ? 's' : ''}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-primary text-center mt-2 font-semibold">
+              Próxima previsão a qualquer momento...
+            </p>
+          )}
         </div>
       ) : currentPrediction && (
         <div className={cn(
