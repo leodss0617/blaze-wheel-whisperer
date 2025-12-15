@@ -88,13 +88,8 @@ export function useBlazeData() {
 
   // Generate prediction when new round arrives
   const checkForSignal = useCallback(async (currentRounds: BlazeRound[]) => {
-    // Increment AI prediction counter
-    aiPredictionRef.current++;
-    
-    // Use AI prediction every 5 rounds or if useAI is enabled
-    const shouldUseAI = useAI && aiPredictionRef.current % 5 === 0;
-    
-    if (shouldUseAI) {
+    // Always get AI prediction when enabled (updates the panel)
+    if (useAI) {
       console.log('Requesting AI prediction...');
       const aiSignal = await getAIPrediction();
       if (aiSignal) {

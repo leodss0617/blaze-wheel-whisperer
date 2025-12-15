@@ -1,7 +1,6 @@
-import { Brain, Zap, TrendingUp, Target } from 'lucide-react';
+import { Brain, Zap, TrendingUp, Loader2 } from 'lucide-react';
 import { AIPrediction, AIStats } from '@/hooks/useAIPrediction';
 import { ColorBall } from './ColorBall';
-import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 
@@ -11,7 +10,6 @@ interface AIPanelProps {
   isLoading: boolean;
   useAI: boolean;
   onToggleAI: (enabled: boolean) => void;
-  onRequestPrediction: () => void;
 }
 
 export function AIPanel({
@@ -20,16 +18,16 @@ export function AIPanel({
   isLoading,
   useAI,
   onToggleAI,
-  onRequestPrediction,
 }: AIPanelProps) {
   return (
     <div className="glass-card p-4 md:p-6 h-full">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <Brain className="h-5 w-5 text-primary animate-pulse" />
+          <Brain className={cn("h-5 w-5 text-primary", isLoading && "animate-pulse")} />
           <h2 className="text-lg font-display font-semibold neon-text">
             IA Adaptativa
           </h2>
+          {isLoading && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">IA</span>
@@ -58,16 +56,16 @@ export function AIPanel({
         )}
       </div>
 
-      {/* Last AI Prediction */}
+      {/* Current AI Prediction */}
       {prediction && (
         <div className="mb-4">
           <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
             <Zap className="h-3 w-3" />
-            Última Previsão IA
+            Previsão Atual
           </p>
           <div className={cn(
             'p-3 rounded-lg',
-            prediction.should_bet ? 'bg-primary/10 neon-border' : 'bg-muted/50'
+            prediction.should_bet ? 'bg-primary/10 neon-border animate-pulse-neon' : 'bg-muted/50'
           )}>
             <div className="flex items-center gap-3">
               <ColorBall color={prediction.predicted_color} size="md" />
@@ -93,7 +91,20 @@ export function AIPanel({
                 {prediction.analysis}
               </p>
             )}
+            {!prediction.should_bet && (
+              <p className="text-xs text-blaze-gold mt-2">
+                ⚠️ Confiança baixa - Aguarde melhor oportunidade
+              </p>
+            )}
           </div>
+        </div>
+      )}
+
+      {!prediction && useAI && (
+        <div className="mb-4 p-4 rounded-lg bg-muted/50 text-center">
+          <Brain className="h-8 w-8 mx-auto mb-2 text-muted-foreground opacity-50" />
+          <p className="text-sm text-muted-foreground">Aguardando dados...</p>
+          <p className="text-xs text-muted-foreground">A IA analisará automaticamente</p>
         </div>
       )}
 
@@ -127,28 +138,8 @@ export function AIPanel({
         </div>
       )}
 
-      {/* Request AI Prediction Button */}
-      <Button
-        onClick={onRequestPrediction}
-        disabled={isLoading || !useAI}
-        className="w-full mt-4"
-        variant={useAI ? 'default' : 'secondary'}
-      >
-        {isLoading ? (
-          <>
-            <Brain className="h-4 w-4 mr-2 animate-spin" />
-            Analisando...
-          </>
-        ) : (
-          <>
-            <Target className="h-4 w-4 mr-2" />
-            Solicitar Previsão IA
-          </>
-        )}
-      </Button>
-
-      <p className="text-xs text-muted-foreground text-center mt-2">
-        A IA aprende com cada resultado
+      <p className="text-xs text-muted-foreground text-center mt-4">
+        A IA aprende automaticamente com cada resultado
       </p>
     </div>
   );
