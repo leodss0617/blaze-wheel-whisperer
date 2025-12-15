@@ -14,7 +14,72 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      blaze_rounds: {
+        Row: {
+          blaze_id: string
+          color: string
+          created_at: string
+          id: string
+          number: number
+          round_timestamp: string
+        }
+        Insert: {
+          blaze_id: string
+          color: string
+          created_at?: string
+          id?: string
+          number: number
+          round_timestamp: string
+        }
+        Update: {
+          blaze_id?: string
+          color?: string
+          created_at?: string
+          id?: string
+          number?: number
+          round_timestamp?: string
+        }
+        Relationships: []
+      }
+      prediction_signals: {
+        Row: {
+          actual_result: string | null
+          confidence: number
+          created_at: string
+          id: string
+          predicted_color: string
+          protections: number
+          reason: string
+          signal_timestamp: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          actual_result?: string | null
+          confidence: number
+          created_at?: string
+          id?: string
+          predicted_color: string
+          protections?: number
+          reason: string
+          signal_timestamp: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          actual_result?: string | null
+          confidence?: number
+          created_at?: string
+          id?: string
+          predicted_color?: string
+          protections?: number
+          reason?: string
+          signal_timestamp?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

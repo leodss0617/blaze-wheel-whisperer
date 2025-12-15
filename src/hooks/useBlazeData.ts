@@ -35,6 +35,53 @@ export function useBlazeData() {
     }
   }, [rounds]);
 
+  // Save round to database
+  const saveRoundToDb = useCallback(async (round: BlazeRound) => {
+    try {
+      await supabase.from('blaze_rounds').upsert({
+        blaze_id: round.id,
+        color: round.color,
+        number: round.number,
+        round_timestamp: round.timestamp.toISOString(),
+      }, { onConflict: 'blaze_id' });
+    } catch (error) {
+      console.error('Error saving round to DB:', error);
+    }
+  }, []);
+
+  // Save signal to database
+  const saveSignalToDb = useCallback(async (signal: PredictionSignal) => {
+    try {
+      await supabase.from('prediction_signals').insert({
+        predicted_color: signal.predictedColor,
+        confidence: signal.confidence,
+        reason: signal.reason,
+        protections: signal.protections,
+        status: signal.status,
+        actual_result: signal.actualResult || null,
+        signal_timestamp: signal.timestamp.toISOString(),
+      });
+    } catch (error) {
+      console.error('Error saving signal to DB:', error);
+    }
+  }, []);
+
+  // Update signal in database
+  const updateSignalInDb = useCallback(async (signal: PredictionSignal) => {
+    try {
+      // Find by timestamp since we don't have DB id
+      await supabase.from('prediction_signals')
+        .update({
+          status: signal.status,
+          protections: signal.protections,
+          actual_result: signal.actualResult || null,
+        })
+        .eq('signal_timestamp', signal.timestamp.toISOString());
+    } catch (error) {
+      console.error('Error updating signal in DB:', error);
+    }
+  }, []);
+
   // Generate prediction when new round arrives
   const checkForSignal = useCallback((currentRounds: BlazeRound[]) => {
     const prediction = analyzePatternsAndPredict(currentRounds);
@@ -52,6 +99,9 @@ export function useBlazeData() {
           // Play alert sound
           playAlertSound(isHighConfidence);
           
+          // Save signal to database
+          saveSignalToDb(prediction);
+          
           toast({
             title: isHighConfidence ? '🔥 SINAL FORTE!' : '🎯 Novo Sinal Gerado!',
             description: `Apostar em ${prediction.predictedColor === 'red' ? 'VERMELHO' : 'PRETO'} - Confiança: ${prediction.confidence}%`,
@@ -61,7 +111,7 @@ export function useBlazeData() {
         return prev;
       });
     }
-  }, [toast, playAlertSound]);
+  }, [toast, playAlertSound, saveSignalToDb]);
 
   // Update signal status based on actual results
   useEffect(() => {
@@ -74,24 +124,32 @@ export function useBlazeData() {
         // Check if this signal was for a recent round
         const signalAge = Date.now() - signal.timestamp.getTime();
         if (signalAge > 120000) {
-          return { ...signal, status: 'loss' as const, actualResult: lastRound.color };
+          const updated = { ...signal, status: 'loss' as const, actualResult: lastRound.color };
+          updateSignalInDb(updated);
+          return updated;
         }
         
         // Check if the prediction was correct
         if (lastRound.timestamp > signal.timestamp) {
           if (lastRound.color === signal.predictedColor) {
-            return { ...signal, status: 'win' as const };
+            const updated = { ...signal, status: 'win' as const };
+            updateSignalInDb(updated);
+            return updated;
           } else if (signal.protections > 0) {
-            return { ...signal, protections: signal.protections - 1 };
+            const updated = { ...signal, protections: signal.protections - 1 };
+            updateSignalInDb(updated);
+            return updated;
           } else {
-            return { ...signal, status: 'loss' as const, actualResult: lastRound.color };
+            const updated = { ...signal, status: 'loss' as const, actualResult: lastRound.color };
+            updateSignalInDb(updated);
+            return updated;
           }
         }
         
         return signal;
       }));
     }
-  }, [rounds]);
+  }, [rounds, updateSignalInDb]);
 
   const convertBlazeGame = (game: BlazeAPIGame): BlazeRound => {
     const colorMap: Record<number, BlazeColor> = {
@@ -136,6 +194,8 @@ export function useBlazeData() {
 
       if (isInitial) {
         setRounds(newRounds);
+        // Save all initial rounds to DB
+        newRounds.forEach(round => saveRoundToDb(round));
         if (newRounds.length > 0) {
           setLastProcessedId(newRounds[newRounds.length - 1].id);
         }
@@ -147,6 +207,9 @@ export function useBlazeData() {
           
           if (actuallyNewRounds.length > 0) {
             console.log(`Found ${actuallyNewRounds.length} new rounds`);
+            // Save new rounds to DB
+            actuallyNewRounds.forEach(round => saveRoundToDb(round));
+            
             const updated = [...prev, ...actuallyNewRounds].slice(-100);
             
             // Check for signals with new data
@@ -169,7 +232,7 @@ export function useBlazeData() {
         });
       }
     }
-  }, [connectionStatus, toast, checkForSignal]);
+  }, [connectionStatus, toast, checkForSignal, saveRoundToDb]);
 
   const connectToBlaze = useCallback(async () => {
     if (pollIntervalRef.current) {
