@@ -25,7 +25,16 @@ export function useBlazeData() {
   const [isSimulating, setIsSimulating] = useState(false);
   const [lastProcessedId, setLastProcessedId] = useState<string | null>(null);
   const [useAI, setUseAI] = useState(true);
-  const [predictionInterval, setPredictionInterval] = useState(60); // Default 60 seconds
+  const [predictionInterval, setPredictionIntervalState] = useState(() => {
+    const saved = localStorage.getItem('blaze-prediction-interval');
+    return saved ? parseInt(saved, 10) : 60;
+  });
+  
+  // Wrapper to save to localStorage
+  const setPredictionInterval = (value: number) => {
+    setPredictionIntervalState(value);
+    localStorage.setItem('blaze-prediction-interval', value.toString());
+  };
   
   // Prediction state management
   const [predictionState, setPredictionState] = useState<PredictionState>('analyzing');
