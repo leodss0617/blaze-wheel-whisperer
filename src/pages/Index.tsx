@@ -39,6 +39,7 @@ const Index = () => {
     galeLevel,
     predictionInterval,
     setPredictionInterval,
+    roundsUntilNextPrediction,
     baseBet,
     setBaseBet,
     totalProfit,
@@ -231,6 +232,7 @@ const Index = () => {
                   signals={signals} 
                   predictionState={predictionState}
                   currentPrediction={currentPrediction}
+                  roundsUntilNextPrediction={roundsUntilNextPrediction}
                 />
                 <StatsPanel stats={stats} />
               </TabsContent>
@@ -283,6 +285,7 @@ const Index = () => {
                 signals={signals}
                 predictionState={predictionState}
                 currentPrediction={currentPrediction}
+                roundsUntilNextPrediction={roundsUntilNextPrediction}
               />
               <BetHistoryPanel signals={signals} />
               <PatternChart rounds={rounds} />
