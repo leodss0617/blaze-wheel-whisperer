@@ -274,50 +274,44 @@ export function useBlazeData() {
 
   // Generate prediction when in analyzing state - based on round count
   const checkForSignal = useCallback(async (currentRounds: BlazeRound[]) => {
-    if (currentRounds.length === 0) return;
+    if (currentRounds.length < 5) return; // Need at least 5 rounds for analysis
     
     const lastRound = currentRounds[currentRounds.length - 1];
     const currentRoundNumber = lastRound.number;
     
     // Calculate rounds until next prediction
     let roundsRemaining = 0;
-    if (lastCompletedRoundNumber.current !== null) {
-      const roundsPassed = Math.abs(currentRoundNumber - lastCompletedRoundNumber.current);
+    const isFirstPrediction = lastCompletedRoundNumber.current === null;
+    
+    if (!isFirstPrediction) {
+      const roundsPassed = Math.abs(currentRoundNumber - lastCompletedRoundNumber.current!);
       roundsRemaining = Math.max(0, predictionInterval - roundsPassed);
     }
     setRoundsUntilNextPrediction(roundsRemaining);
     
-    // Strict guards to prevent multiple predictions
-    if (predictionState !== 'analyzing') {
-      console.log('Não gerando - não está em modo análise:', predictionState);
+    // Guard: not in analyzing mode
+    if (predictionState !== 'analyzing') return;
+    
+    // Guard: waiting for result
+    if (waitingForResult.current) return;
+    
+    // Guard: already generating
+    if (isGeneratingPrediction.current) return;
+    
+    // Guard: need to wait more rounds (skip for first prediction)
+    if (!isFirstPrediction && roundsRemaining > 0) {
+      console.log(`Aguardando ${roundsRemaining} rodada(s)`);
       return;
     }
     
-    if (waitingForResult.current) {
-      console.log('Não gerando - aguardando resultado da previsão atual');
-      return;
-    }
-    
-    if (isGeneratingPrediction.current) {
-      console.log('Não gerando - já está gerando');
-      return;
-    }
-    
-    // Check rounds passed since last completed prediction
-    if (lastCompletedRoundNumber.current !== null && roundsRemaining > 0) {
-      console.log(`Aguardando ${roundsRemaining} rodada(s) antes de nova previsão`);
-      return;
-    }
-    
-    // Lock prediction generation
+    // Lock and generate
     isGeneratingPrediction.current = true;
+    console.log('🎯 Gerando previsão...', isFirstPrediction ? '(primeira)' : '');
     
     try {
       if (useAI) {
-        console.log('Gerando nova previsão AI após intervalo de rodadas...');
         const aiSignal = await getAIPrediction();
         
-        // AI hook already filters out signals where should_bet is false
         if (aiSignal) {
           waitingForResult.current = true;
           setCurrentPrediction(aiSignal);
@@ -331,10 +325,8 @@ export function useBlazeData() {
           
           toast({
             title: isHighConfidence ? '🔥 SINAL FORTE!' : '🎯 Novo Sinal!',
-            description: `Apostar em ${aiSignal.predictedColor === 'red' ? 'VERMELHO' : 'PRETO'} - Confiança: ${aiSignal.confidence}%`,
+            description: `Apostar em ${aiSignal.predictedColor === 'red' ? 'VERMELHO' : 'PRETO'} - ${aiSignal.confidence}%`,
           });
-        } else {
-          console.log('AI decidiu não apostar ou sem sinal');
         }
       }
     } catch (error) {
@@ -413,6 +405,8 @@ export function useBlazeData() {
         newRounds.forEach(round => saveRoundToDb(round));
         if (newRounds.length > 0) {
           setLastProcessedId(newRounds[newRounds.length - 1].id);
+          // Trigger first prediction after initial load
+          setTimeout(() => checkForSignal(newRounds), 500);
         }
       } else {
         setRounds(prev => {
