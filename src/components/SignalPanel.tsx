@@ -1,6 +1,6 @@
 import { PredictionSignal, PredictionState } from '@/types/blaze';
 import { ColorBall } from './ColorBall';
-import { Target, CheckCircle2, XCircle, Loader2, Shield } from 'lucide-react';
+import { Target, CheckCircle2, XCircle, Loader2, Shield, Activity, Zap, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -10,6 +10,13 @@ interface SignalPanelProps {
   currentPrediction: PredictionSignal | null;
   roundsUntilNextPrediction?: number;
 }
+
+const stateConfig = {
+  analyzing: { label: 'Analisando', icon: Activity, color: 'text-muted-foreground', bg: 'bg-muted/50', border: 'border-muted' },
+  active: { label: 'Sinal Ativo', icon: Zap, color: 'text-primary', bg: 'bg-primary/20', border: 'border-primary' },
+  gale1: { label: 'Gale 1', icon: RefreshCw, color: 'text-blaze-gold', bg: 'bg-blaze-gold/20', border: 'border-blaze-gold' },
+  gale2: { label: 'Gale 2', icon: RefreshCw, color: 'text-accent', bg: 'bg-accent/20', border: 'border-accent' },
+};
 
 export function SignalPanel({ signals, predictionState, currentPrediction, roundsUntilNextPrediction = 0 }: SignalPanelProps) {
   const historySignals = [...signals]
@@ -24,6 +31,9 @@ export function SignalPanel({ signals, predictionState, currentPrediction, round
 
   const isAnalyzing = predictionState === 'analyzing';
   const isGale = predictionState === 'gale1' || predictionState === 'gale2';
+  
+  const currentStateConfig = stateConfig[predictionState];
+  const StateIcon = currentStateConfig.icon;
 
   return (
     <div className="glass-card p-4 md:p-6 h-full">
@@ -40,6 +50,48 @@ export function SignalPanel({ signals, predictionState, currentPrediction, round
             {winRate.toFixed(0)}% Win
           </span>
         )}
+      </div>
+
+      {/* Cycle State Indicator */}
+      <div className="mb-4">
+        <div className="flex items-center gap-1.5 mb-2">
+          {Object.entries(stateConfig).map(([state, config], index) => {
+            const Icon = config.icon;
+            const isCurrentState = state === predictionState;
+            const isPastState = 
+              (predictionState === 'active' && state === 'analyzing') ||
+              (predictionState === 'gale1' && ['analyzing', 'active'].includes(state)) ||
+              (predictionState === 'gale2' && ['analyzing', 'active', 'gale1'].includes(state));
+            
+            return (
+              <div key={state} className="flex items-center flex-1">
+                <div className={cn(
+                  "flex items-center justify-center gap-1 px-2 py-1 rounded-lg flex-1 transition-all duration-300",
+                  isCurrentState ? `${config.bg} ${config.border} border-2` : 
+                  isPastState ? 'bg-primary/10 border border-primary/30' : 'bg-muted/30 border border-border/30'
+                )}>
+                  <Icon className={cn(
+                    "h-3 w-3",
+                    isCurrentState ? config.color : isPastState ? 'text-primary/50' : 'text-muted-foreground/50',
+                    isCurrentState && state !== 'analyzing' && 'animate-pulse'
+                  )} />
+                  <span className={cn(
+                    "text-[10px] font-semibold uppercase tracking-wider hidden sm:inline",
+                    isCurrentState ? config.color : isPastState ? 'text-primary/50' : 'text-muted-foreground/50'
+                  )}>
+                    {config.label}
+                  </span>
+                </div>
+                {index < 3 && (
+                  <div className={cn(
+                    "w-2 h-0.5 mx-0.5",
+                    isPastState || isCurrentState ? 'bg-primary/50' : 'bg-muted/50'
+                  )} />
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Current State Display */}
