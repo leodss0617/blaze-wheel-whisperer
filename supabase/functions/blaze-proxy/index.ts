@@ -5,9 +5,24 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Blaze Double API endpoint
-const BLAZE_API_URL = 'https://blaze1.space/api/roulette_games/recent';
-const BLAZE_CURRENT_URL = 'https://blaze1.space/api/roulette_games/current';
+// Updated Blaze API endpoints (blaze.bet.br)
+const getHistoryUrl = () => {
+  const date = new Date();
+  const endDate = date.toISOString();
+  
+  date.setDate(date.getDate() - 1);
+  const startDate = date.toISOString();
+  
+  return `https://blaze.bet.br/api/singleplayer-originals/originals/roulette_games/recent/history/1?startDate=${startDate}&endDate=${endDate}&page=1`;
+};
+
+// Alternative endpoints to try
+const BLAZE_ENDPOINTS = [
+  () => getHistoryUrl(),
+  () => 'https://blaze.bet.br/api/roulette_games/recent',
+  () => 'https://blaze1.space/api/roulette_games/recent',
+  () => 'https://api-v2.blaze.com/roulette_games/recent',
+];
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -16,35 +31,81 @@ serve(async (req) => {
   }
 
   try {
-    const url = new URL(req.url);
-    const endpoint = url.searchParams.get('endpoint') || 'recent';
+    let data = null;
+    let lastError = null;
 
-    let apiUrl = BLAZE_API_URL;
-    if (endpoint === 'current') {
-      apiUrl = BLAZE_CURRENT_URL;
+    // Try each endpoint until one works
+    for (const getUrl of BLAZE_ENDPOINTS) {
+      const url = getUrl();
+      console.log(`Trying Blaze endpoint: ${url}`);
+
+      try {
+        const response = await fetch(url, {
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': 'https://blaze.bet.br/',
+            'Origin': 'https://blaze.bet.br',
+            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+          },
+        });
+
+        if (response.ok) {
+          const jsonData = await response.json();
+          console.log(`Success from ${url}:`, JSON.stringify(jsonData).substring(0, 200));
+          
+          // Handle different response formats
+          if (jsonData.records && Array.isArray(jsonData.records)) {
+            data = jsonData.records;
+          } else if (Array.isArray(jsonData)) {
+            data = jsonData;
+          } else if (jsonData.data && Array.isArray(jsonData.data)) {
+            data = jsonData.data;
+          } else {
+            data = [jsonData];
+          }
+          
+          if (data && data.length > 0) {
+            console.log(`Got ${data.length} records from ${url}`);
+            break;
+          }
+        } else {
+          console.log(`Failed ${url}: ${response.status} ${response.statusText}`);
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        console.log(`Error with ${url}:`, errorMessage);
+        lastError = errorMessage;
+      }
     }
 
-    console.log(`Fetching from Blaze API: ${apiUrl}`);
-
-    // Fetch data from Blaze API
-    const response = await fetch(apiUrl, {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Referer': 'https://blaze1.space/',
-        'Origin': 'https://blaze1.space',
-      },
-    });
-
-    if (!response.ok) {
-      console.error(`Blaze API error: ${response.status} ${response.statusText}`);
-      throw new Error(`Failed to fetch from Blaze: ${response.status}`);
+    if (!data || data.length === 0) {
+      console.log('All endpoints failed, returning error');
+      return new Response(
+        JSON.stringify({ 
+          error: 'Could not fetch data from any Blaze endpoint',
+          lastError: lastError,
+          success: false 
+        }),
+        { 
+          status: 503, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
     }
 
-    const data = await response.json();
-    console.log(`Received ${Array.isArray(data) ? data.length : 1} records from Blaze`);
+    // Normalize the data format
+    const normalizedData = data.map((item: any) => ({
+      id: item.id || item.uuid || crypto.randomUUID(),
+      color: typeof item.color === 'number' ? item.color : 
+             item.color === 'white' ? 0 : 
+             item.color === 'red' ? 1 : 
+             item.color === 'black' ? 2 : item.color,
+      roll: item.roll || item.number || 0,
+      created_at: item.created_at || item.createdAt || new Date().toISOString(),
+    }));
 
-    return new Response(JSON.stringify(data), {
+    return new Response(JSON.stringify(normalizedData), {
       headers: { 
         ...corsHeaders, 
         'Content-Type': 'application/json',
@@ -52,7 +113,7 @@ serve(async (req) => {
       },
     });
   } catch (error) {
-    console.error('Error fetching Blaze data:', error);
+    console.error('Error in blaze-proxy:', error);
     return new Response(
       JSON.stringify({ 
         error: error instanceof Error ? error.message : 'Unknown error',
