@@ -3,6 +3,7 @@ import { BlazeRound, BlazeStats, PredictionSignal, ConnectionStatus, BlazeColor 
 import { calculateStats, analyzePatternsAndPredict, generateMockRounds } from '@/lib/blazeAnalyzer';
 import { useToast } from '@/hooks/use-toast';
 import { useAlertSound } from '@/hooks/useAlertSound';
+import { useAIPrediction, AIPrediction, AIStats } from '@/hooks/useAIPrediction';
 import { supabase } from '@/integrations/supabase/client';
 
 const POLL_INTERVAL = 3000; // Poll every 3 seconds
@@ -22,10 +23,13 @@ export function useBlazeData() {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [isSimulating, setIsSimulating] = useState(false);
   const [lastProcessedId, setLastProcessedId] = useState<string | null>(null);
+  const [useAI, setUseAI] = useState(true);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const simulationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const aiPredictionRef = useRef<number>(0);
   const { toast } = useToast();
   const { playAlertSound } = useAlertSound();
+  const { getAIPrediction, isLoading: isAILoading, lastPrediction: aiPrediction, aiStats } = useAIPrediction();
 
   // Calculate stats when rounds change
   useEffect(() => {
@@ -83,7 +87,26 @@ export function useBlazeData() {
   }, []);
 
   // Generate prediction when new round arrives
-  const checkForSignal = useCallback((currentRounds: BlazeRound[]) => {
+  const checkForSignal = useCallback(async (currentRounds: BlazeRound[]) => {
+    // Increment AI prediction counter
+    aiPredictionRef.current++;
+    
+    // Use AI prediction every 5 rounds or if useAI is enabled
+    const shouldUseAI = useAI && aiPredictionRef.current % 5 === 0;
+    
+    if (shouldUseAI) {
+      console.log('Requesting AI prediction...');
+      const aiSignal = await getAIPrediction();
+      if (aiSignal) {
+        setSignals(prev => {
+          saveSignalToDb(aiSignal);
+          return [...prev.slice(-19), aiSignal];
+        });
+        return;
+      }
+    }
+    
+    // Fallback to pattern-based prediction
     const prediction = analyzePatternsAndPredict(currentRounds);
     if (prediction) {
       // Check if we should add this signal (not too frequent)
@@ -111,7 +134,7 @@ export function useBlazeData() {
         return prev;
       });
     }
-  }, [toast, playAlertSound, saveSignalToDb]);
+  }, [toast, playAlertSound, saveSignalToDb, useAI, getAIPrediction]);
 
   // Update signal status based on actual results
   useEffect(() => {
@@ -331,5 +354,12 @@ export function useBlazeData() {
     disconnect,
     startSimulation,
     stopSimulation,
+    // AI features
+    useAI,
+    setUseAI,
+    isAILoading,
+    aiPrediction,
+    aiStats,
+    getAIPrediction,
   };
 }

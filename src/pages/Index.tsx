@@ -5,7 +5,8 @@ import { HistoryPanel } from '@/components/HistoryPanel';
 import { StatsPanel } from '@/components/StatsPanel';
 import { SignalPanel } from '@/components/SignalPanel';
 import { PatternChart } from '@/components/PatternChart';
-import { Flame, AlertTriangle } from 'lucide-react';
+import { AIPanel } from '@/components/AIPanel';
+import { Flame, AlertTriangle, Brain } from 'lucide-react';
 
 const Index = () => {
   const {
@@ -18,6 +19,13 @@ const Index = () => {
     disconnect,
     startSimulation,
     stopSimulation,
+    // AI features
+    useAI,
+    setUseAI,
+    isAILoading,
+    aiPrediction,
+    aiStats,
+    getAIPrediction,
   } = useBlazeData();
 
   const lastRound = rounds.length > 0 ? rounds[rounds.length - 1] : null;
@@ -51,8 +59,14 @@ const Index = () => {
                 <span className="danger-text">BLAZE</span>
                 <span className="text-foreground"> ANALYZER</span>
               </h1>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground flex items-center gap-2">
                 Análise de padrões em tempo real para o Double
+                {useAI && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/20 text-primary text-xs">
+                    <Brain className="h-3 w-3" />
+                    IA Ativa
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -85,7 +99,7 @@ const Index = () => {
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left Column - Live + History */}
-          <div className="lg:col-span-4 space-y-6">
+          <div className="lg:col-span-3 space-y-6">
             <LiveWheel lastRound={lastRound} />
             <HistoryPanel rounds={rounds} />
           </div>
@@ -96,8 +110,16 @@ const Index = () => {
             <PatternChart rounds={rounds} />
           </div>
 
-          {/* Right Column - Stats */}
-          <div className="lg:col-span-3">
+          {/* Right Column - Stats + AI */}
+          <div className="lg:col-span-4 space-y-6">
+            <AIPanel
+              prediction={aiPrediction}
+              stats={aiStats}
+              isLoading={isAILoading}
+              useAI={useAI}
+              onToggleAI={setUseAI}
+              onRequestPrediction={getAIPrediction}
+            />
             <StatsPanel stats={stats} />
           </div>
         </div>
@@ -105,8 +127,8 @@ const Index = () => {
         {/* Footer */}
         <footer className="mt-12 text-center text-xs text-muted-foreground">
           <p>
-            Desenvolvido para análise estatística • Não garantimos resultados •{' '}
-            <span className="text-primary">v1.0</span>
+            Desenvolvido para análise estatística • IA adaptativa integrada •{' '}
+            <span className="text-primary">v2.0</span>
           </p>
         </footer>
       </div>
