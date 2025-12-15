@@ -12,6 +12,8 @@ serve(async (req) => {
   }
 
   try {
+    const { recalibrationMode = false } = await req.json().catch(() => ({}));
+    
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -21,6 +23,8 @@ serve(async (req) => {
     }
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+
+    console.log('AI Predict called - Recalibration mode:', recalibrationMode);
 
     // Fetch recent rounds from database
     const { data: recentRounds, error: roundsError } = await supabase
@@ -86,9 +90,20 @@ serve(async (req) => {
       .map(s => ({ reason: s.reason, predicted: s.predicted_color, actual: s.actual_result }));
 
     // Build AI prompt with historical context
+    const recalibrationContext = recalibrationMode ? `
+ATENÇÃO: MODO RECALIBRAÇÃO ATIVADO!
+A IA errou 2 vezes consecutivas. Você DEVE:
+1. Inverter sua estratégia anterior
+2. Analisar com muito mais cuidado os últimos resultados
+3. Considerar que o padrão anterior estava ERRADO
+4. Buscar um novo padrão nos dados mais recentes
+5. Ser mais conservador e só apostar com alta confiança
+6. Considerar a possibilidade de o mercado estar em transição
+` : '';
+
     const prompt = `Você é um especialista em análise de padrões do jogo Double da Blaze. 
 Analise os dados históricos e faça uma previsão precisa.
-
+${recalibrationContext}
 DADOS ATUAIS:
 - Últimas 20 cores: ${last20Colors.join(', ')}
 - Sequência atual: ${currentStreak.count}x ${currentStreak.color}
@@ -103,20 +118,21 @@ HISTÓRICO DE PERFORMANCE:
 PADRÕES QUE FUNCIONARAM:
 ${successfulPatterns.slice(0, 5).map(p => `- ${p}`).join('\n') || '- Ainda coletando dados'}
 
-PADRÕES QUE FALHARAM:
+PADRÕES QUE FALHARAM (EVITE ESTES!):
 ${failedPatterns.slice(0, 5).map(p => `- ${p.reason} (previu ${p.predicted}, saiu ${p.actual})`).join('\n') || '- Ainda coletando dados'}
 
 REGRAS:
 1. Analise a sequência atual e probabilidades
-2. Considere os padrões que funcionaram e evite os que falharam
+2. ${recalibrationMode ? 'INVERTA sua estratégia - os padrões anteriores falharam!' : 'Considere os padrões que funcionaram e evite os que falharam'}
 3. Seja conservador - só dê previsão com alta confiança
 4. Nunca preveja branco (probabilidade muito baixa)
+${recalibrationMode ? '5. ATENÇÃO: Modo recalibração - análise crítica necessária!' : ''}
 
 Responda APENAS em JSON válido com este formato:
 {
   "predicted_color": "red" ou "black",
   "confidence": número de 60 a 95,
-  "reason": "explicação curta em português",
+  "reason": "explicação curta em português${recalibrationMode ? ' - mencione que é recalibração' : ''}",
   "analysis": "análise detalhada",
   "protections": número de 1 a 3,
   "should_bet": true ou false

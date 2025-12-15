@@ -29,7 +29,7 @@ export function useBlazeData() {
   const aiPredictionRef = useRef<number>(0);
   const { toast } = useToast();
   const { playAlertSound } = useAlertSound();
-  const { getAIPrediction, isLoading: isAILoading, lastPrediction: aiPrediction, aiStats } = useAIPrediction();
+  const { getAIPrediction, isLoading: isAILoading, lastPrediction: aiPrediction, aiStats, consecutiveLosses, isRecalibrating, recordWin, recordLoss } = useAIPrediction();
 
   // Calculate stats when rounds change
   useEffect(() => {
@@ -144,6 +144,7 @@ export function useBlazeData() {
         if (signalAge > 120000) {
           const updated = { ...signal, status: 'loss' as const, actualResult: lastRound.color };
           updateSignalInDb(updated);
+          recordLoss(); // Track consecutive loss
           return updated;
         }
         
@@ -152,6 +153,7 @@ export function useBlazeData() {
           if (lastRound.color === signal.predictedColor) {
             const updated = { ...signal, status: 'win' as const };
             updateSignalInDb(updated);
+            recordWin(); // Reset consecutive losses
             return updated;
           } else if (signal.protections > 0) {
             const updated = { ...signal, protections: signal.protections - 1 };
@@ -160,6 +162,7 @@ export function useBlazeData() {
           } else {
             const updated = { ...signal, status: 'loss' as const, actualResult: lastRound.color };
             updateSignalInDb(updated);
+            recordLoss(); // Track consecutive loss
             return updated;
           }
         }
@@ -167,7 +170,7 @@ export function useBlazeData() {
         return signal;
       }));
     }
-  }, [rounds, updateSignalInDb]);
+  }, [rounds, updateSignalInDb, recordWin, recordLoss]);
 
   const convertBlazeGame = (game: BlazeAPIGame): BlazeRound => {
     const colorMap: Record<number, BlazeColor> = {
@@ -356,5 +359,7 @@ export function useBlazeData() {
     aiPrediction,
     aiStats,
     getAIPrediction,
+    consecutiveLosses,
+    isRecalibrating,
   };
 }
