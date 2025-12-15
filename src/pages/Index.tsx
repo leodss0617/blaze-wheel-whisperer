@@ -6,6 +6,7 @@ import { StatsPanel } from '@/components/StatsPanel';
 import { SignalPanel } from '@/components/SignalPanel';
 import { PatternChart } from '@/components/PatternChart';
 import { AIPanel } from '@/components/AIPanel';
+import { CountdownTimer } from '@/components/CountdownTimer';
 import { Flame, AlertTriangle, Brain } from 'lucide-react';
 
 const Index = () => {
@@ -99,6 +100,7 @@ const Index = () => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left Column - Live + History */}
           <div className="lg:col-span-3 space-y-6">
+            <CountdownTimer lastRoundTimestamp={lastRound?.timestamp || null} />
             <LiveWheel lastRound={lastRound} />
             <HistoryPanel rounds={rounds} />
           </div>
