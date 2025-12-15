@@ -1,4 +1,4 @@
-import { Brain, Zap, TrendingUp, Loader2 } from 'lucide-react';
+import { Brain, Zap, TrendingUp, Loader2, RefreshCw } from 'lucide-react';
 import { AIPrediction, AIStats } from '@/hooks/useAIPrediction';
 import { ColorBall } from './ColorBall';
 import { Switch } from '@/components/ui/switch';
@@ -10,6 +10,8 @@ interface AIPanelProps {
   isLoading: boolean;
   useAI: boolean;
   onToggleAI: (enabled: boolean) => void;
+  consecutiveLosses: number;
+  isRecalibrating: boolean;
 }
 
 export function AIPanel({
@@ -18,22 +20,50 @@ export function AIPanel({
   isLoading,
   useAI,
   onToggleAI,
+  consecutiveLosses,
+  isRecalibrating,
 }: AIPanelProps) {
+  const needsRecalibration = consecutiveLosses >= 2;
   return (
-    <div className="glass-card p-4 md:p-6 h-full">
+    <div className={cn(
+      'glass-card p-4 md:p-6 h-full',
+      needsRecalibration && 'border-accent/50'
+    )}>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <Brain className={cn("h-5 w-5 text-primary", isLoading && "animate-pulse")} />
+          {isRecalibrating ? (
+            <RefreshCw className="h-5 w-5 text-accent animate-spin" />
+          ) : (
+            <Brain className={cn("h-5 w-5 text-primary", isLoading && "animate-pulse")} />
+          )}
           <h2 className="text-lg font-display font-semibold neon-text">
-            IA Adaptativa
+            {isRecalibrating ? 'Recalibrando...' : 'IA Adaptativa'}
           </h2>
-          {isLoading && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+          {isLoading && !isRecalibrating && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">IA</span>
           <Switch checked={useAI} onCheckedChange={onToggleAI} />
         </div>
       </div>
+
+      {/* Recalibration Warning */}
+      {needsRecalibration && useAI && (
+        <div className="p-3 rounded-lg mb-4 border bg-accent/10 border-accent/30">
+          <div className="flex items-center gap-2 mb-1">
+            <RefreshCw className={cn("h-4 w-4 text-accent", isRecalibrating && "animate-spin")} />
+            <span className="text-sm font-semibold text-accent">
+              {isRecalibrating ? 'RECALIBRANDO...' : 'MODO RECALIBRAÇÃO'}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {isRecalibrating 
+              ? 'IA analisando novos padrões...'
+              : `${consecutiveLosses} erros consecutivos - Próxima previsão será recalibrada`
+            }
+          </p>
+        </div>
+      )}
 
       {/* AI Status */}
       <div className={cn(
@@ -48,6 +78,11 @@ export function AIPanel({
           <span className="text-sm font-semibold">
             {useAI ? 'IA Ativa - Aprendendo' : 'IA Desativada'}
           </span>
+          {consecutiveLosses > 0 && useAI && (
+            <span className="text-xs text-accent ml-auto">
+              {consecutiveLosses} erro{consecutiveLosses > 1 ? 's' : ''}
+            </span>
+          )}
         </div>
         {stats && (
           <p className="text-xs text-muted-foreground">

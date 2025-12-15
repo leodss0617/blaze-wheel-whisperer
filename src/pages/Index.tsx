@@ -26,6 +26,8 @@ const Index = () => {
     isAILoading,
     aiPrediction,
     aiStats,
+    consecutiveLosses,
+    isRecalibrating,
   } = useBlazeData();
 
   const lastRound = rounds.length > 0 ? rounds[rounds.length - 1] : null;
@@ -119,6 +121,8 @@ const Index = () => {
               isLoading={isAILoading}
               useAI={useAI}
               onToggleAI={setUseAI}
+              consecutiveLosses={consecutiveLosses}
+              isRecalibrating={isRecalibrating}
             />
             <StatsPanel stats={stats} />
           </div>
