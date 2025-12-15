@@ -40,7 +40,12 @@ serve(async (req) => {
       console.log(`Trying Blaze endpoint: ${url}`);
 
       try {
+        // Add timeout to prevent hanging connections
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+        
         const response = await fetch(url, {
+          signal: controller.signal,
           headers: {
             'Accept': 'application/json',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -49,6 +54,8 @@ serve(async (req) => {
             'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
           },
         });
+        
+        clearTimeout(timeoutId);
 
         if (response.ok) {
           const jsonData = await response.json();
