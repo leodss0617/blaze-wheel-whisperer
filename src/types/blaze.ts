@@ -33,6 +33,10 @@ export interface PredictionSignal {
   status: 'pending' | 'win' | 'loss';
   protections: number;
   actualResult?: BlazeColor; // Color that came out when signal lost
+  afterRound?: {
+    number: number;
+    color: BlazeColor;
+  };
 }
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';

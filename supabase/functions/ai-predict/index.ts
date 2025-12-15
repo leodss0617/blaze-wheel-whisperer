@@ -186,8 +186,15 @@ Responda APENAS em JSON válido com este formato:
       };
     }
 
+    // Get last round info
+    const lastRound = recentRounds && recentRounds.length > 0 ? {
+      number: recentRounds[0].number,
+      color: recentRounds[0].color,
+    } : null;
+
     return new Response(JSON.stringify({
       prediction,
+      lastRound,
       stats: {
         last20Stats,
         last50Stats,

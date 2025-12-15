@@ -59,10 +59,19 @@ export function AIPanel({
       {/* Current AI Prediction */}
       {prediction && (
         <div className="mb-4">
-          <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
-            <Zap className="h-3 w-3" />
-            Previsão Atual
-          </p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <Zap className="h-3 w-3" />
+              Previsão Atual
+            </p>
+            {prediction.afterRound && (
+              <div className="flex items-center gap-1 text-xs bg-muted/50 px-2 py-1 rounded">
+                <span className="text-muted-foreground">Após rodada:</span>
+                <ColorBall color={prediction.afterRound.color} size="xs" />
+                <span className="font-semibold">{prediction.afterRound.number}</span>
+              </div>
+            )}
+          </div>
           <div className={cn(
             'p-3 rounded-lg',
             prediction.should_bet ? 'bg-primary/10 neon-border animate-pulse-neon' : 'bg-muted/50'
