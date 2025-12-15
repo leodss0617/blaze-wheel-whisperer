@@ -8,11 +8,11 @@ import { PatternChart } from '@/components/PatternChart';
 import { AIPanel } from '@/components/AIPanel';
 import { CountdownTimer } from '@/components/CountdownTimer';
 import { BankrollManager } from '@/components/BankrollManager';
-import { Flame, Brain, Activity, BarChart3, Wallet, Target, Menu } from 'lucide-react';
-import { useState } from 'react';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
+import { Flame, Brain, Activity, BarChart3, Wallet, Target, Download } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { useNavigate } from 'react-router-dom';
 
 const Index = () => {
   const {
@@ -34,7 +34,14 @@ const Index = () => {
     isRecalibrating,
   } = useBlazeData();
 
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // Check if app is installed
+    const isInstalled = window.matchMedia('(display-mode: standalone)').matches;
+    setShowInstallPrompt(!isInstalled);
+  }, []);
 
   const lastRound = rounds.length > 0 ? rounds[rounds.length - 1] : null;
 
@@ -82,6 +89,17 @@ const Index = () => {
 
               {/* Status Badges - Desktop */}
               <div className="hidden sm:flex items-center gap-2">
+                {showInstallPrompt && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="h-8 text-xs border-primary/30 hover:bg-primary/10"
+                    onClick={() => navigate('/install')}
+                  >
+                    <Download className="h-3.5 w-3.5 mr-1.5" />
+                    Instalar
+                  </Button>
+                )}
                 {useAI && (
                   <div className="flex items-center gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full bg-primary/10 border border-primary/30">
                     <Brain className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-primary" />
@@ -110,6 +128,16 @@ const Index = () => {
                   connectionStatus === 'connected' ? 'bg-primary animate-pulse' : 'bg-muted-foreground'
                 }`} />
                 {useAI && <Brain className="h-4 w-4 text-primary" />}
+                {showInstallPrompt && (
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-8 w-8 p-0"
+                    onClick={() => navigate('/install')}
+                  >
+                    <Download className="h-4 w-4 text-primary" />
+                  </Button>
+                )}
               </div>
             </div>
           </div>
