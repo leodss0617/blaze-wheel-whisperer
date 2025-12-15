@@ -239,15 +239,22 @@ export function useBlazeData() {
   const checkResult = useCallback((lastRound: BlazeRound) => {
     if (!currentPrediction || currentPrediction.status !== 'pending') return;
     
+    console.log('=== VERIFICANDO RESULTADO ===');
+    console.log('Previsão:', currentPrediction.predictedColor);
+    console.log('Resultado da rodada:', lastRound.color, '- Número:', lastRound.number);
+    console.log('Gale Level:', galeLevel);
+    
     if (lastRound.color === currentPrediction.predictedColor) {
+      console.log('✅ ACERTOU! Cor prevista bateu com resultado');
       handleWin(currentPrediction);
     } else if (lastRound.color === 'white') {
       // White doesn't count as loss - wait for next round
-      console.log('White appeared - waiting for next round');
+      console.log('⚪ Branco apareceu - aguardando próxima rodada');
     } else {
+      console.log('❌ ERROU! Previu', currentPrediction.predictedColor, 'mas saiu', lastRound.color);
       handleLoss(currentPrediction, lastRound.color);
     }
-  }, [currentPrediction, handleWin, handleLoss]);
+  }, [currentPrediction, galeLevel, handleWin, handleLoss]);
 
   // Generate prediction when in analyzing state
   const checkForSignal = useCallback(async (currentRounds: BlazeRound[]) => {
@@ -318,6 +325,10 @@ export function useBlazeData() {
       
       // Check if this is a new round after the prediction
       if (lastRound.timestamp > currentPrediction.timestamp) {
+        console.log('=== NOVA RODADA DETECTADA ===');
+        console.log('Timestamp previsão:', currentPrediction.timestamp.toISOString());
+        console.log('Timestamp rodada:', lastRound.timestamp.toISOString());
+        console.log('afterRound info:', currentPrediction.afterRound);
         checkResult(lastRound);
       }
     }
