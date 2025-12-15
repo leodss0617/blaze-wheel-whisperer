@@ -9,6 +9,7 @@ import { AIPanel } from '@/components/AIPanel';
 import { CountdownTimer } from '@/components/CountdownTimer';
 import { BankrollManager } from '@/components/BankrollManager';
 import { BrasiliaClockDisplay } from '@/components/BrasiliaClockDisplay';
+import { BetHistoryPanel } from '@/components/BetHistoryPanel';
 import { Flame, Brain, Activity, BarChart3, Wallet, Target, Download } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -210,11 +211,12 @@ const Index = () => {
           {/* Mobile Layout with Tabs */}
           <div className="lg:hidden">
             <Tabs defaultValue="live" className="w-full">
-              <TabsList className="w-full grid grid-cols-4 mb-4 bg-card/50">
-                <TabsTrigger value="live" className="text-xs px-2">Live</TabsTrigger>
-                <TabsTrigger value="signals" className="text-xs px-2">Sinais</TabsTrigger>
-                <TabsTrigger value="ai" className="text-xs px-2">IA</TabsTrigger>
-                <TabsTrigger value="bank" className="text-xs px-2">Banca</TabsTrigger>
+              <TabsList className="w-full grid grid-cols-5 mb-4 bg-card/50">
+                <TabsTrigger value="live" className="text-xs px-1">Live</TabsTrigger>
+                <TabsTrigger value="signals" className="text-xs px-1">Sinais</TabsTrigger>
+                <TabsTrigger value="history" className="text-xs px-1">Apostas</TabsTrigger>
+                <TabsTrigger value="ai" className="text-xs px-1">IA</TabsTrigger>
+                <TabsTrigger value="bank" className="text-xs px-1">Banca</TabsTrigger>
               </TabsList>
 
               <TabsContent value="live" className="space-y-4 mt-0">
@@ -231,6 +233,10 @@ const Index = () => {
                   currentPrediction={currentPrediction}
                 />
                 <StatsPanel stats={stats} />
+              </TabsContent>
+
+              <TabsContent value="history" className="space-y-4 mt-0">
+                <BetHistoryPanel signals={signals} />
               </TabsContent>
 
               <TabsContent value="ai" className="space-y-4 mt-0">
@@ -278,6 +284,7 @@ const Index = () => {
                 predictionState={predictionState}
                 currentPrediction={currentPrediction}
               />
+              <BetHistoryPanel signals={signals} />
               <PatternChart rounds={rounds} />
             </div>
 
