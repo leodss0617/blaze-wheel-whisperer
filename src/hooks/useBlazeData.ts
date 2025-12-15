@@ -25,6 +25,7 @@ export function useBlazeData() {
   const [isSimulating, setIsSimulating] = useState(false);
   const [lastProcessedId, setLastProcessedId] = useState<string | null>(null);
   const [useAI, setUseAI] = useState(true);
+  const [predictionInterval, setPredictionInterval] = useState(60); // Default 60 seconds
   
   // Prediction state management
   const [predictionState, setPredictionState] = useState<PredictionState>('analyzing');
@@ -183,7 +184,7 @@ export function useBlazeData() {
   const checkForSignal = useCallback(async (currentRounds: BlazeRound[]) => {
     // Strict guards to prevent multiple predictions
     const now = Date.now();
-    const MIN_INTERVAL = 60000; // Minimum 60 seconds between predictions
+    const minIntervalMs = predictionInterval * 1000; // Convert seconds to ms
     
     if (predictionState !== 'analyzing') {
       console.log('Not generating - not in analyzing state:', predictionState);
@@ -200,7 +201,7 @@ export function useBlazeData() {
       return;
     }
     
-    if (now - lastPredictionTime.current < MIN_INTERVAL) {
+    if (now - lastPredictionTime.current < minIntervalMs) {
       console.log('Not generating - too soon since last prediction');
       return;
     }
@@ -239,7 +240,7 @@ export function useBlazeData() {
     } finally {
       isGeneratingPrediction.current = false;
     }
-  }, [predictionState, toast, playAlertSound, saveSignalToDb, useAI, getAIPrediction]);
+  }, [predictionState, predictionInterval, toast, playAlertSound, saveSignalToDb, useAI, getAIPrediction]);
 
   // Update signal status based on actual results
   useEffect(() => {
@@ -447,5 +448,8 @@ export function useBlazeData() {
     predictionState,
     currentPrediction,
     galeLevel,
+    // Interval settings
+    predictionInterval,
+    setPredictionInterval,
   };
 }
