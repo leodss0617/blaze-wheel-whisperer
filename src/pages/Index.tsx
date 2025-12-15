@@ -35,6 +35,8 @@ const Index = () => {
     predictionState,
     currentPrediction,
     galeLevel,
+    predictionInterval,
+    setPredictionInterval,
   } = useBlazeData();
 
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
@@ -234,6 +236,8 @@ const Index = () => {
                   onToggleAI={setUseAI}
                   consecutiveLosses={consecutiveLosses}
                   isRecalibrating={isRecalibrating}
+                  predictionInterval={predictionInterval}
+                  onIntervalChange={setPredictionInterval}
                 />
               </TabsContent>
 
@@ -277,6 +281,8 @@ const Index = () => {
                 onToggleAI={setUseAI}
                 consecutiveLosses={consecutiveLosses}
                 isRecalibrating={isRecalibrating}
+                predictionInterval={predictionInterval}
+                onIntervalChange={setPredictionInterval}
               />
               <BankrollManager 
                 predictionState={predictionState}

@@ -1,7 +1,8 @@
-import { Brain, Zap, TrendingUp, Loader2, RefreshCw } from 'lucide-react';
+import { Brain, Zap, TrendingUp, Loader2, RefreshCw, Clock } from 'lucide-react';
 import { AIPrediction, AIStats } from '@/hooks/useAIPrediction';
 import { ColorBall } from './ColorBall';
 import { Switch } from '@/components/ui/switch';
+import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
 
 interface AIPanelProps {
@@ -12,6 +13,8 @@ interface AIPanelProps {
   onToggleAI: (enabled: boolean) => void;
   consecutiveLosses: number;
   isRecalibrating: boolean;
+  predictionInterval: number;
+  onIntervalChange: (value: number) => void;
 }
 
 export function AIPanel({
@@ -22,8 +25,17 @@ export function AIPanel({
   onToggleAI,
   consecutiveLosses,
   isRecalibrating,
+  predictionInterval,
+  onIntervalChange,
 }: AIPanelProps) {
   const needsRecalibration = consecutiveLosses >= 2;
+  
+  const formatInterval = (seconds: number) => {
+    if (seconds < 60) return `${seconds}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+  };
   return (
     <div className={cn(
       'glass-card p-4 md:p-6 h-full',
@@ -149,6 +161,31 @@ export function AIPanel({
           <Brain className="h-8 w-8 mx-auto mb-2 text-muted-foreground opacity-50" />
           <p className="text-sm text-muted-foreground">Aguardando dados...</p>
           <p className="text-xs text-muted-foreground">A IA analisará automaticamente</p>
+        </div>
+      )}
+
+      {/* Prediction Interval Control */}
+      {useAI && (
+        <div className="p-3 rounded-lg bg-muted/50 border border-border/50 mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Clock className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Intervalo entre previsões</span>
+            <span className="ml-auto text-sm font-bold text-primary">
+              {formatInterval(predictionInterval)}
+            </span>
+          </div>
+          <Slider
+            value={[predictionInterval]}
+            onValueChange={(v) => onIntervalChange(v[0])}
+            min={30}
+            max={300}
+            step={15}
+            className="w-full"
+          />
+          <div className="flex justify-between text-xs text-muted-foreground mt-1">
+            <span>30s</span>
+            <span>5min</span>
+          </div>
         </div>
       )}
 
