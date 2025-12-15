@@ -1,0 +1,4 @@
+project_id = "bnrgbbsleniwykswyjem"
+
+[functions.blaze-proxy]
+verify_jwt = false
