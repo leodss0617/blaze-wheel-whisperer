@@ -116,8 +116,8 @@
 
 @layer components {
   .glass-card {
-    @apply bg-card/80 backdrop-blur-xl border border-border/50 rounded-xl;
-    box-shadow: var(--shadow-card);
+    @apply bg-card/90 backdrop-blur-xl border border-border/50 rounded-xl;
+    box-shadow: var(--shadow-card), inset 0 1px 0 hsl(var(--foreground) / 0.05);
   }
 
   .neon-text {
@@ -163,14 +163,18 @@
     animation: pulseGlow 2s ease-in-out infinite;
   }
 
+  .animate-pulse-neon {
+    animation: pulseNeon 2s ease-in-out infinite;
+  }
+
   .scan-line {
     background: linear-gradient(
       180deg,
       transparent 0%,
-      hsl(var(--primary) / 0.03) 50%,
+      hsl(var(--primary) / 0.02) 50%,
       transparent 100%
     );
-    animation: scanLine 8s linear infinite;
+    animation: scanLine 10s linear infinite;
   }
 }
 
@@ -196,6 +200,15 @@
   50% {
     opacity: 0.8;
     box-shadow: 0 0 40px hsl(var(--primary) / 0.6);
+  }
+}
+
+@keyframes pulseNeon {
+  0%, 100% {
+    box-shadow: 0 0 10px hsl(var(--primary) / 0.3), 0 0 20px hsl(var(--primary) / 0.2);
+  }
+  50% {
+    box-shadow: 0 0 20px hsl(var(--primary) / 0.5), 0 0 40px hsl(var(--primary) / 0.3);
   }
 }
 
