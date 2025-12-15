@@ -32,6 +32,7 @@ export interface PredictionSignal {
   timestamp: Date;
   status: 'pending' | 'win' | 'loss';
   protections: number;
+  actualResult?: BlazeColor; // Color that came out when signal lost
 }
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';

@@ -4,7 +4,7 @@ import { BlazeColor } from '@/types/blaze';
 interface ColorBallProps {
   color: BlazeColor;
   number?: number;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   showNumber?: boolean;
   className?: string;
   animate?: boolean;
@@ -19,6 +19,7 @@ export function ColorBall({
   animate = false,
 }: ColorBallProps) {
   const sizeClasses = {
+    xs: 'h-4 w-4 text-[8px]',
     sm: 'h-6 w-6 text-[10px]',
     md: 'h-10 w-10 text-sm',
     lg: 'h-14 w-14 text-lg',
