@@ -8,7 +8,11 @@ import { PatternChart } from '@/components/PatternChart';
 import { AIPanel } from '@/components/AIPanel';
 import { CountdownTimer } from '@/components/CountdownTimer';
 import { BankrollManager } from '@/components/BankrollManager';
-import { Flame, Brain, Activity, BarChart3, Wallet, Target } from 'lucide-react';
+import { Flame, Brain, Activity, BarChart3, Wallet, Target, Menu } from 'lucide-react';
+import { useState } from 'react';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const Index = () => {
   const {
@@ -21,7 +25,6 @@ const Index = () => {
     disconnect,
     startSimulation,
     stopSimulation,
-    // AI features
     useAI,
     setUseAI,
     isAILoading,
@@ -31,6 +34,8 @@ const Index = () => {
     isRecalibrating,
   } = useBlazeData();
 
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   const lastRound = rounds.length > 0 ? rounds[rounds.length - 1] : null;
 
   const wins = signals.filter(s => s.status === 'win').length;
@@ -39,9 +44,9 @@ const Index = () => {
   const winRate = total > 0 ? (wins / total) * 100 : 0;
 
   return (
-    <div className="min-h-screen bg-background relative overflow-hidden">
-      {/* Scan line effect */}
-      <div className="scan-line fixed inset-0 pointer-events-none z-50" />
+    <div className="min-h-screen bg-background relative overflow-x-hidden">
+      {/* Scan line effect - hidden on mobile for performance */}
+      <div className="scan-line fixed inset-0 pointer-events-none z-50 hidden md:block" />
       
       {/* Background grid */}
       <div 
@@ -57,46 +62,54 @@ const Index = () => {
 
       <div className="relative z-10">
         {/* Header */}
-        <header className="border-b border-border/50 bg-card/50 backdrop-blur-xl sticky top-0 z-40">
-          <div className="container mx-auto px-4 py-4 max-w-7xl">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-accent/20 neon-border">
-                  <Flame className="h-6 w-6 text-accent" />
+        <header className="border-b border-border/50 bg-card/80 backdrop-blur-xl sticky top-0 z-40">
+          <div className="container mx-auto px-3 sm:px-4 py-3 max-w-7xl">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="p-1.5 sm:p-2 rounded-lg bg-accent/20 neon-border">
+                  <Flame className="h-5 w-5 sm:h-6 sm:w-6 text-accent" />
                 </div>
                 <div>
-                  <h1 className="text-xl md:text-2xl font-display font-bold tracking-tight">
+                  <h1 className="text-lg sm:text-xl md:text-2xl font-display font-bold tracking-tight">
                     <span className="danger-text">BLAZE</span>
                     <span className="text-foreground"> PRO</span>
                   </h1>
-                  <p className="text-xs text-muted-foreground hidden md:block">
+                  <p className="text-[10px] sm:text-xs text-muted-foreground hidden sm:block">
                     Sistema Inteligente de Análise
                   </p>
                 </div>
               </div>
 
-              {/* Status Badges */}
-              <div className="flex items-center gap-2">
+              {/* Status Badges - Desktop */}
+              <div className="hidden sm:flex items-center gap-2">
                 {useAI && (
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/30">
-                    <Brain className="h-3.5 w-3.5 text-primary" />
-                    <span className="text-xs font-semibold text-primary">IA ATIVA</span>
+                  <div className="flex items-center gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full bg-primary/10 border border-primary/30">
+                    <Brain className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-primary" />
+                    <span className="text-[10px] sm:text-xs font-semibold text-primary">IA ATIVA</span>
                   </div>
                 )}
-                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full ${
+                <div className={`flex items-center gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full ${
                   connectionStatus === 'connected' 
                     ? 'bg-primary/10 border border-primary/30' 
                     : 'bg-muted border border-border'
                 }`}>
-                  <div className={`h-2 w-2 rounded-full ${
+                  <div className={`h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full ${
                     connectionStatus === 'connected' ? 'bg-primary animate-pulse' : 'bg-muted-foreground'
                   }`} />
-                  <span className={`text-xs font-medium ${
+                  <span className={`text-[10px] sm:text-xs font-medium ${
                     connectionStatus === 'connected' ? 'text-primary' : 'text-muted-foreground'
                   }`}>
                     {connectionStatus === 'connected' ? 'ONLINE' : 'OFFLINE'}
                   </span>
                 </div>
+              </div>
+
+              {/* Mobile Status & Menu */}
+              <div className="flex sm:hidden items-center gap-2">
+                <div className={`h-2 w-2 rounded-full ${
+                  connectionStatus === 'connected' ? 'bg-primary animate-pulse' : 'bg-muted-foreground'
+                }`} />
+                {useAI && <Brain className="h-4 w-4 text-primary" />}
               </div>
             </div>
           </div>
@@ -104,34 +117,34 @@ const Index = () => {
 
         {/* Quick Stats Bar */}
         <div className="border-b border-border/30 bg-card/30 backdrop-blur-sm">
-          <div className="container mx-auto px-4 py-3 max-w-7xl">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/30">
-                <Activity className="h-4 w-4 text-primary" />
-                <div>
-                  <p className="text-xs text-muted-foreground">Rodadas</p>
-                  <p className="text-sm font-bold">{rounds.length}</p>
+          <div className="container mx-auto px-3 sm:px-4 py-2 sm:py-3 max-w-7xl">
+            <div className="grid grid-cols-4 gap-2 sm:gap-4">
+              <div className="flex items-center gap-1.5 sm:gap-3 p-1.5 sm:p-2 rounded-lg bg-muted/30">
+                <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-primary flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[8px] sm:text-xs text-muted-foreground truncate">Rodadas</p>
+                  <p className="text-xs sm:text-sm font-bold">{rounds.length}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/30">
-                <Target className="h-4 w-4 text-blaze-gold" />
-                <div>
-                  <p className="text-xs text-muted-foreground">Sinais</p>
-                  <p className="text-sm font-bold">{signals.length}</p>
+              <div className="flex items-center gap-1.5 sm:gap-3 p-1.5 sm:p-2 rounded-lg bg-muted/30">
+                <Target className="h-3 w-3 sm:h-4 sm:w-4 text-blaze-gold flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[8px] sm:text-xs text-muted-foreground truncate">Sinais</p>
+                  <p className="text-xs sm:text-sm font-bold">{signals.length}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/30">
-                <BarChart3 className="h-4 w-4 text-primary" />
-                <div>
-                  <p className="text-xs text-muted-foreground">Taxa Win</p>
-                  <p className="text-sm font-bold text-primary">{winRate.toFixed(0)}%</p>
+              <div className="flex items-center gap-1.5 sm:gap-3 p-1.5 sm:p-2 rounded-lg bg-muted/30">
+                <BarChart3 className="h-3 w-3 sm:h-4 sm:w-4 text-primary flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[8px] sm:text-xs text-muted-foreground truncate">Win</p>
+                  <p className="text-xs sm:text-sm font-bold text-primary">{winRate.toFixed(0)}%</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/30">
-                <Wallet className="h-4 w-4 text-accent" />
-                <div>
-                  <p className="text-xs text-muted-foreground">W/L</p>
-                  <p className="text-sm font-bold">
+              <div className="flex items-center gap-1.5 sm:gap-3 p-1.5 sm:p-2 rounded-lg bg-muted/30">
+                <Wallet className="h-3 w-3 sm:h-4 sm:w-4 text-accent flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[8px] sm:text-xs text-muted-foreground truncate">W/L</p>
+                  <p className="text-xs sm:text-sm font-bold">
                     <span className="text-primary">{wins}</span>
                     <span className="text-muted-foreground">/</span>
                     <span className="text-accent">{losses}</span>
@@ -142,9 +155,9 @@ const Index = () => {
           </div>
         </div>
 
-        <div className="container mx-auto px-4 py-6 max-w-7xl">
+        <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 max-w-7xl">
           {/* Connection Panel */}
-          <div className="mb-6">
+          <div className="mb-4 sm:mb-6">
             <ConnectionPanel
               status={connectionStatus}
               isSimulating={isSimulating}
@@ -155,8 +168,48 @@ const Index = () => {
             />
           </div>
 
-          {/* Main Dashboard Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Mobile Layout with Tabs */}
+          <div className="lg:hidden">
+            <Tabs defaultValue="live" className="w-full">
+              <TabsList className="w-full grid grid-cols-4 mb-4 bg-card/50">
+                <TabsTrigger value="live" className="text-xs px-2">Live</TabsTrigger>
+                <TabsTrigger value="signals" className="text-xs px-2">Sinais</TabsTrigger>
+                <TabsTrigger value="ai" className="text-xs px-2">IA</TabsTrigger>
+                <TabsTrigger value="bank" className="text-xs px-2">Banca</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="live" className="space-y-4 mt-0">
+                <CountdownTimer lastRoundTimestamp={lastRound?.timestamp || null} />
+                <LiveWheel lastRound={lastRound} />
+                <HistoryPanel rounds={rounds} />
+                <PatternChart rounds={rounds} />
+              </TabsContent>
+
+              <TabsContent value="signals" className="space-y-4 mt-0">
+                <SignalPanel signals={signals} />
+                <StatsPanel stats={stats} />
+              </TabsContent>
+
+              <TabsContent value="ai" className="space-y-4 mt-0">
+                <AIPanel
+                  prediction={aiPrediction}
+                  stats={aiStats}
+                  isLoading={isAILoading}
+                  useAI={useAI}
+                  onToggleAI={setUseAI}
+                  consecutiveLosses={consecutiveLosses}
+                  isRecalibrating={isRecalibrating}
+                />
+              </TabsContent>
+
+              <TabsContent value="bank" className="space-y-4 mt-0">
+                <BankrollManager consecutiveLosses={consecutiveLosses} />
+              </TabsContent>
+            </Tabs>
+          </div>
+
+          {/* Desktop Layout - 3 Column Grid */}
+          <div className="hidden lg:grid lg:grid-cols-12 gap-6">
             {/* Left Column - Live Game */}
             <div className="lg:col-span-3 space-y-6">
               <CountdownTimer lastRoundTimestamp={lastRound?.timestamp || null} />
@@ -188,14 +241,12 @@ const Index = () => {
         </div>
 
         {/* Footer */}
-        <footer className="border-t border-border/30 bg-card/30 mt-8">
-          <div className="container mx-auto px-4 py-4 max-w-7xl">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-2 text-xs text-muted-foreground">
+        <footer className="border-t border-border/30 bg-card/30 mt-6 sm:mt-8">
+          <div className="container mx-auto px-3 sm:px-4 py-3 sm:py-4 max-w-7xl">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-[10px] sm:text-xs text-muted-foreground text-center sm:text-left">
+              <p>⚠️ Sistema para fins educacionais. Jogue com responsabilidade.</p>
               <p>
-                ⚠️ Este sistema é para fins educacionais. Jogue com responsabilidade.
-              </p>
-              <p>
-                IA Adaptativa • Martingale Integrado • <span className="text-primary">v3.0</span>
+                IA Adaptativa • Martingale • <span className="text-primary">v3.0</span>
               </p>
             </div>
           </div>
