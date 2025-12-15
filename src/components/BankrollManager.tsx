@@ -19,12 +19,33 @@ export function BankrollManager({
   galeLevel,
   lastRound,
 }: BankrollManagerProps) {
-  const [bankroll, setBankroll] = useState<number>(0);
-  const [target, setTarget] = useState<number>(0);
-  const [baseBet, setBaseBet] = useState<number>(0);
+  const [bankroll, setBankroll] = useState<number>(() => {
+    const saved = localStorage.getItem('blaze-bankroll');
+    return saved ? parseFloat(saved) : 0;
+  });
+  const [target, setTarget] = useState<number>(() => {
+    const saved = localStorage.getItem('blaze-target');
+    return saved ? parseFloat(saved) : 0;
+  });
+  const [baseBet, setBaseBet] = useState<number>(() => {
+    const saved = localStorage.getItem('blaze-base-bet');
+    return saved ? parseFloat(saved) : 0;
+  });
   const [currentBet, setCurrentBet] = useState<number>(0);
-  const [isConfigured, setIsConfigured] = useState(false);
+  const [isConfigured, setIsConfigured] = useState(() => {
+    return localStorage.getItem('blaze-configured') === 'true';
+  });
   const [totalProfit, setTotalProfit] = useState<number>(0);
+
+  // Save to localStorage when config changes
+  useEffect(() => {
+    if (isConfigured) {
+      localStorage.setItem('blaze-bankroll', bankroll.toString());
+      localStorage.setItem('blaze-target', target.toString());
+      localStorage.setItem('blaze-base-bet', baseBet.toString());
+      localStorage.setItem('blaze-configured', 'true');
+    }
+  }, [bankroll, target, baseBet, isConfigured]);
 
   const calculateMartingaleBet = useCallback((level: number, base: number): number => {
     if (base <= 0) return 0;
@@ -53,6 +74,10 @@ export function BankrollManager({
     setBaseBet(0);
     setCurrentBet(0);
     setTotalProfit(0);
+    localStorage.removeItem('blaze-bankroll');
+    localStorage.removeItem('blaze-target');
+    localStorage.removeItem('blaze-base-bet');
+    localStorage.removeItem('blaze-configured');
   };
 
   // Calculate progress to target
