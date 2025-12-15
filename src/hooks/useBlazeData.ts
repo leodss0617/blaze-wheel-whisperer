@@ -7,7 +7,7 @@ import { useAIPrediction, AIPrediction, AIStats } from '@/hooks/useAIPrediction'
 import { supabase } from '@/integrations/supabase/client';
 import { formatBrasiliaTime } from '@/components/BrasiliaClockDisplay';
 
-const POLL_INTERVAL = 1500; // Poll every 1.5 seconds for faster updates
+const POLL_INTERVAL = 1000; // Poll every 1 second for faster updates
 const MAX_GALES = 2; // Maximum number of gales
 
 interface BlazeAPIGame {
@@ -67,6 +67,7 @@ export function useBlazeData() {
   const simulationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const waitingForResult = useRef(false);
   const isGeneratingPrediction = useRef(false);
+  const predictionRoundNumber = useRef<number | null>(null); // Track round when prediction was made
   
   const { toast } = useToast();
   const { playAlertSound } = useAlertSound();
@@ -253,28 +254,22 @@ export function useBlazeData() {
   const checkResult = useCallback((lastRound: BlazeRound) => {
     if (!currentPrediction || currentPrediction.status !== 'pending') return;
     
-    console.log('=== VERIFICANDO RESULTADO ===');
-    console.log('🕐 Horário Brasília:', formatBrasiliaTime(new Date()));
-    console.log('Previsão:', currentPrediction.predictedColor);
-    console.log('Resultado da rodada:', lastRound.color, '- Número:', lastRound.number);
-    console.log('Horário da rodada (Brasília):', formatBrasiliaTime(lastRound.timestamp));
-    console.log('Gale Level:', galeLevel);
+    console.log(`Verificando: Previu ${currentPrediction.predictedColor}, saiu ${lastRound.color} (rodada ${lastRound.number})`);
     
     if (lastRound.color === currentPrediction.predictedColor) {
-      console.log('✅ ACERTOU! Cor prevista bateu com resultado');
+      console.log('✅ ACERTOU!');
       handleWin(currentPrediction, lastRound.number);
     } else if (lastRound.color === 'white') {
-      // White doesn't count as loss - wait for next round
-      console.log('⚪ Branco apareceu - aguardando próxima rodada');
+      console.log('⚪ Branco - aguardando próxima');
     } else {
-      console.log('❌ ERROU! Previu', currentPrediction.predictedColor, 'mas saiu', lastRound.color);
+      console.log(`❌ ERROU! Gale level: ${galeLevel}`);
       handleLoss(currentPrediction, lastRound.color, lastRound.number);
     }
   }, [currentPrediction, galeLevel, handleWin, handleLoss]);
 
   // Generate prediction when in analyzing state - based on round count
   const checkForSignal = useCallback(async (currentRounds: BlazeRound[]) => {
-    if (currentRounds.length < 5) return; // Need at least 5 rounds for analysis
+    if (currentRounds.length < 5) return;
     
     const lastRound = currentRounds[currentRounds.length - 1];
     const currentRoundNumber = lastRound.number;
@@ -289,30 +284,24 @@ export function useBlazeData() {
     }
     setRoundsUntilNextPrediction(roundsRemaining);
     
-    // Guard: not in analyzing mode
+    // Guards
     if (predictionState !== 'analyzing') return;
-    
-    // Guard: waiting for result
     if (waitingForResult.current) return;
-    
-    // Guard: already generating
     if (isGeneratingPrediction.current) return;
-    
-    // Guard: need to wait more rounds (skip for first prediction)
-    if (!isFirstPrediction && roundsRemaining > 0) {
-      console.log(`Aguardando ${roundsRemaining} rodada(s)`);
-      return;
-    }
+    if (!isFirstPrediction && roundsRemaining > 0) return;
     
     // Lock and generate
     isGeneratingPrediction.current = true;
-    console.log('🎯 Gerando previsão...', isFirstPrediction ? '(primeira)' : '');
+    console.log('🎯 Gerando previsão para próxima rodada...');
     
     try {
       if (useAI) {
         const aiSignal = await getAIPrediction();
         
         if (aiSignal) {
+          // Store current round number - prediction is for NEXT round
+          predictionRoundNumber.current = currentRoundNumber;
+          
           waitingForResult.current = true;
           setCurrentPrediction(aiSignal);
           setPredictionState('active');
@@ -327,6 +316,8 @@ export function useBlazeData() {
             title: isHighConfidence ? '🔥 SINAL FORTE!' : '🎯 Novo Sinal!',
             description: `Apostar em ${aiSignal.predictedColor === 'red' ? 'VERMELHO' : 'PRETO'} - ${aiSignal.confidence}%`,
           });
+          
+          console.log(`Previsão feita na rodada ${currentRoundNumber}, aguardando próxima rodada...`);
         }
       }
     } catch (error) {
@@ -341,20 +332,15 @@ export function useBlazeData() {
     if (rounds.length > 0 && currentPrediction && waitingForResult.current) {
       const lastRound = rounds[rounds.length - 1];
       
-      // Check if this is a NEW round (different from the one used for prediction)
-      // Use round number instead of timestamp to avoid clock sync issues
-      const afterRoundNumber = currentPrediction.afterRound?.number;
-      const isNewRound = afterRoundNumber !== undefined && lastRound.number !== afterRoundNumber;
-      
-      console.log('=== VERIFICANDO SE É NOVA RODADA ===');
-      console.log('🕐 Horário Brasília:', formatBrasiliaTime(new Date()));
-      console.log('Rodada atual:', lastRound.number, '-', lastRound.color, '- Hora:', formatBrasiliaTime(lastRound.timestamp));
-      console.log('Rodada após previsão (afterRound):', afterRoundNumber);
-      console.log('É nova rodada?', isNewRound);
+      // Check if this is a NEW round after the prediction was made
+      const isNewRound = predictionRoundNumber.current !== null && 
+                         lastRound.number !== predictionRoundNumber.current;
       
       if (isNewRound) {
-        console.log('✓ Nova rodada detectada! Verificando resultado...');
+        console.log(`Nova rodada ${lastRound.number} detectada (previsão feita na ${predictionRoundNumber.current})`);
         checkResult(lastRound);
+        // Update the tracking number for potential gales
+        predictionRoundNumber.current = lastRound.number;
       }
     }
   }, [rounds, currentPrediction, checkResult]);
