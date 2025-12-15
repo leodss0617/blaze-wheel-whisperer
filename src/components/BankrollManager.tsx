@@ -3,41 +3,46 @@ import { Wallet, Target, TrendingUp, AlertTriangle, Calculator, RefreshCw } from
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { PredictionSignal, PredictionState, BlazeRound } from '@/types/blaze';
+import { BetNotification } from './BetNotification';
 
 interface BankrollManagerProps {
-  consecutiveLosses: number;
-  onBetCalculated?: (betAmount: number) => void;
+  predictionState: PredictionState;
+  currentPrediction: PredictionSignal | null;
+  galeLevel: number;
+  lastRound: BlazeRound | null;
 }
 
-export function BankrollManager({ consecutiveLosses, onBetCalculated }: BankrollManagerProps) {
+export function BankrollManager({ 
+  predictionState, 
+  currentPrediction, 
+  galeLevel,
+  lastRound,
+}: BankrollManagerProps) {
   const [bankroll, setBankroll] = useState<number>(0);
   const [target, setTarget] = useState<number>(0);
   const [baseBet, setBaseBet] = useState<number>(0);
   const [currentBet, setCurrentBet] = useState<number>(0);
   const [isConfigured, setIsConfigured] = useState(false);
   const [totalProfit, setTotalProfit] = useState<number>(0);
-  const [martingaleLevel, setMartingaleLevel] = useState(0);
 
-  const calculateMartingaleBet = useCallback((losses: number, base: number): number => {
+  const calculateMartingaleBet = useCallback((level: number, base: number): number => {
     if (base <= 0) return 0;
-    return base * Math.pow(2, losses);
+    return base * Math.pow(2, level);
   }, []);
 
   useEffect(() => {
     if (isConfigured && baseBet > 0) {
-      const newBet = calculateMartingaleBet(consecutiveLosses, baseBet);
+      const newBet = calculateMartingaleBet(galeLevel, baseBet);
       setCurrentBet(newBet);
-      setMartingaleLevel(consecutiveLosses);
-      onBetCalculated?.(newBet);
     }
-  }, [consecutiveLosses, baseBet, isConfigured, calculateMartingaleBet, onBetCalculated]);
+  }, [galeLevel, baseBet, isConfigured, calculateMartingaleBet]);
 
   const handleConfigure = () => {
     if (bankroll > 0 && target > 0 && baseBet > 0) {
       setIsConfigured(true);
-      const initialBet = calculateMartingaleBet(consecutiveLosses, baseBet);
+      const initialBet = calculateMartingaleBet(0, baseBet);
       setCurrentBet(initialBet);
-      setMartingaleLevel(consecutiveLosses);
     }
   };
 
@@ -48,7 +53,6 @@ export function BankrollManager({ consecutiveLosses, onBetCalculated }: Bankroll
     setBaseBet(0);
     setCurrentBet(0);
     setTotalProfit(0);
-    setMartingaleLevel(0);
   };
 
   // Calculate progress to target
@@ -132,6 +136,17 @@ export function BankrollManager({ consecutiveLosses, onBetCalculated }: Bankroll
         </Button>
       </div>
 
+      {/* Bet Notification */}
+      <div className="mb-3 sm:mb-4">
+        <BetNotification
+          currentPrediction={currentPrediction}
+          predictionState={predictionState}
+          currentBet={currentBet}
+          lastRound={lastRound}
+          isConfigured={isConfigured}
+        />
+      </div>
+
       {/* Progress to Target */}
       <div className="mb-3 sm:mb-4">
         <div className="flex justify-between text-[10px] sm:text-xs mb-1">
@@ -169,35 +184,8 @@ export function BankrollManager({ consecutiveLosses, onBetCalculated }: Bankroll
         </div>
       </div>
 
-      {/* Martingale Bet Recommendation */}
-      <div className={cn(
-        "p-3 sm:p-4 rounded-lg mb-3 sm:mb-4 border",
-        martingaleLevel >= 3 ? "bg-accent/10 border-accent/50" : "bg-primary/10 border-primary/50"
-      )}>
-        <div className="flex items-center justify-between mb-1 sm:mb-2">
-          <span className="text-[10px] sm:text-xs text-muted-foreground">PRÓXIMA APOSTA</span>
-          {martingaleLevel > 0 && (
-            <span className={cn(
-              "text-[10px] sm:text-xs font-semibold px-1.5 sm:px-2 py-0.5 rounded",
-              martingaleLevel >= 3 ? "bg-accent/20 text-accent" : "bg-blaze-gold/20 text-blaze-gold"
-            )}>
-              Martingale {martingaleLevel}x
-            </span>
-          )}
-        </div>
-        <p className={cn(
-          "text-2xl sm:text-3xl font-bold font-display",
-          martingaleLevel >= 3 ? "danger-text" : "neon-text"
-        )}>
-          R$ {currentBet.toFixed(2)}
-        </p>
-        <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
-          Base: R$ {baseBet.toFixed(2)} • {consecutiveLosses} erros
-        </p>
-      </div>
-
       {/* Warning if bet exceeds bankroll */}
-      {!canCoverBet && (
+      {!canCoverBet && predictionState !== 'analyzing' && (
         <div className="p-2 sm:p-3 rounded-lg bg-accent/10 border border-accent/50 mb-3 sm:mb-4">
           <div className="flex items-center gap-2 text-accent">
             <AlertTriangle className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
@@ -215,22 +203,26 @@ export function BankrollManager({ consecutiveLosses, onBetCalculated }: Bankroll
           <TrendingUp className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground" />
           <span className="text-[10px] sm:text-xs text-muted-foreground">Sistema Martingale</span>
         </div>
-        <div className="grid grid-cols-2 gap-2 text-[10px] sm:text-xs">
+        <div className="grid grid-cols-3 gap-2 text-[10px] sm:text-xs">
           <div>
-            <span className="text-muted-foreground">Máx:</span>
-            <span className="ml-1 font-semibold">{maxMartingaleLevels}</span>
+            <span className="text-muted-foreground">Base:</span>
+            <span className="ml-1 font-semibold">R$ {baseBet.toFixed(2)}</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Máx Gales:</span>
+            <span className="ml-1 font-semibold">2</span>
           </div>
           <div>
             <span className="text-muted-foreground">Atual:</span>
             <span className={cn(
               "ml-1 font-semibold",
-              martingaleLevel >= maxMartingaleLevels - 1 ? "text-accent" : "text-primary"
+              galeLevel >= 2 ? "text-accent" : galeLevel >= 1 ? "text-blaze-gold" : "text-primary"
             )}>
-              {martingaleLevel}
+              {galeLevel === 0 ? 'Normal' : `Gale ${galeLevel}`}
             </span>
           </div>
         </div>
-        {martingaleLevel >= maxMartingaleLevels - 1 && maxMartingaleLevels > 0 && (
+        {galeLevel >= maxMartingaleLevels - 1 && maxMartingaleLevels > 0 && (
           <p className="text-[10px] sm:text-xs text-accent mt-1 sm:mt-2">
             ⚠️ Próximo nível pode exceder banca
           </p>

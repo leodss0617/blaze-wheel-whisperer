@@ -101,6 +101,7 @@ export function useAIPrediction() {
           timestamp: new Date(),
           status: 'pending',
           protections: prediction.protections,
+          galeLevel: 0,
         };
       }
 
