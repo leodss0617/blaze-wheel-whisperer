@@ -37,6 +37,10 @@ const Index = () => {
     galeLevel,
     predictionInterval,
     setPredictionInterval,
+    baseBet,
+    setBaseBet,
+    totalProfit,
+    resetProfit,
   } = useBlazeData();
 
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
@@ -247,6 +251,10 @@ const Index = () => {
                   currentPrediction={currentPrediction}
                   galeLevel={galeLevel}
                   lastRound={lastRound}
+                  baseBet={baseBet}
+                  setBaseBet={setBaseBet}
+                  totalProfit={totalProfit}
+                  resetProfit={resetProfit}
                 />
               </TabsContent>
             </Tabs>
@@ -289,6 +297,10 @@ const Index = () => {
                 currentPrediction={currentPrediction}
                 galeLevel={galeLevel}
                 lastRound={lastRound}
+                baseBet={baseBet}
+                setBaseBet={setBaseBet}
+                totalProfit={totalProfit}
+                resetProfit={resetProfit}
               />
               <StatsPanel stats={stats} />
             </div>

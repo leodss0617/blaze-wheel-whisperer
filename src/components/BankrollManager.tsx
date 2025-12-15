@@ -11,6 +11,10 @@ interface BankrollManagerProps {
   currentPrediction: PredictionSignal | null;
   galeLevel: number;
   lastRound: BlazeRound | null;
+  baseBet: number;
+  setBaseBet: (value: number) => void;
+  totalProfit: number;
+  resetProfit: () => void;
 }
 
 export function BankrollManager({ 
@@ -18,6 +22,10 @@ export function BankrollManager({
   currentPrediction, 
   galeLevel,
   lastRound,
+  baseBet,
+  setBaseBet,
+  totalProfit,
+  resetProfit,
 }: BankrollManagerProps) {
   const [bankroll, setBankroll] = useState<number>(() => {
     const saved = localStorage.getItem('blaze-bankroll');
@@ -27,7 +35,7 @@ export function BankrollManager({
     const saved = localStorage.getItem('blaze-target');
     return saved ? parseFloat(saved) : 0;
   });
-  const [baseBet, setBaseBet] = useState<number>(() => {
+  const [localBaseBet, setLocalBaseBet] = useState<number>(() => {
     const saved = localStorage.getItem('blaze-base-bet');
     return saved ? parseFloat(saved) : 0;
   });
@@ -35,17 +43,23 @@ export function BankrollManager({
   const [isConfigured, setIsConfigured] = useState(() => {
     return localStorage.getItem('blaze-configured') === 'true';
   });
-  const [totalProfit, setTotalProfit] = useState<number>(0);
+
+  // Sync local baseBet with shared state when configured
+  useEffect(() => {
+    if (isConfigured && localBaseBet > 0 && baseBet !== localBaseBet) {
+      setBaseBet(localBaseBet);
+    }
+  }, [isConfigured, localBaseBet, baseBet, setBaseBet]);
 
   // Save to localStorage when config changes
   useEffect(() => {
     if (isConfigured) {
       localStorage.setItem('blaze-bankroll', bankroll.toString());
       localStorage.setItem('blaze-target', target.toString());
-      localStorage.setItem('blaze-base-bet', baseBet.toString());
+      localStorage.setItem('blaze-base-bet', localBaseBet.toString());
       localStorage.setItem('blaze-configured', 'true');
     }
-  }, [bankroll, target, baseBet, isConfigured]);
+  }, [bankroll, target, localBaseBet, isConfigured]);
 
   const calculateMartingaleBet = useCallback((level: number, base: number): number => {
     if (base <= 0) return 0;
@@ -53,16 +67,17 @@ export function BankrollManager({
   }, []);
 
   useEffect(() => {
-    if (isConfigured && baseBet > 0) {
-      const newBet = calculateMartingaleBet(galeLevel, baseBet);
+    if (isConfigured && localBaseBet > 0) {
+      const newBet = calculateMartingaleBet(galeLevel, localBaseBet);
       setCurrentBet(newBet);
     }
-  }, [galeLevel, baseBet, isConfigured, calculateMartingaleBet]);
+  }, [galeLevel, localBaseBet, isConfigured, calculateMartingaleBet]);
 
   const handleConfigure = () => {
-    if (bankroll > 0 && target > 0 && baseBet > 0) {
+    if (bankroll > 0 && target > 0 && localBaseBet > 0) {
       setIsConfigured(true);
-      const initialBet = calculateMartingaleBet(0, baseBet);
+      setBaseBet(localBaseBet); // Sync with shared state
+      const initialBet = calculateMartingaleBet(0, localBaseBet);
       setCurrentBet(initialBet);
     }
   };
@@ -71,9 +86,10 @@ export function BankrollManager({
     setIsConfigured(false);
     setBankroll(0);
     setTarget(0);
+    setLocalBaseBet(0);
     setBaseBet(0);
     setCurrentBet(0);
-    setTotalProfit(0);
+    resetProfit();
     localStorage.removeItem('blaze-bankroll');
     localStorage.removeItem('blaze-target');
     localStorage.removeItem('blaze-base-bet');
@@ -81,13 +97,14 @@ export function BankrollManager({
   };
 
   // Calculate progress to target
-  const progress = target > 0 ? Math.min(((bankroll + totalProfit) / target) * 100, 100) : 0;
-  const remaining = target - (bankroll + totalProfit);
-  const canCoverBet = (bankroll + totalProfit) >= currentBet;
+  const currentBalance = bankroll + totalProfit;
+  const progress = target > 0 ? Math.min((currentBalance / target) * 100, 100) : 0;
+  const remaining = target - currentBalance;
+  const canCoverBet = currentBalance >= currentBet;
 
   // Calculate max consecutive losses bankroll can handle
-  const maxMartingaleLevels = baseBet > 0 
-    ? Math.floor(Math.log2((bankroll + totalProfit) / baseBet + 1))
+  const maxMartingaleLevels = localBaseBet > 0 
+    ? Math.floor(Math.log2(currentBalance / localBaseBet + 1))
     : 0;
 
   if (!isConfigured) {
@@ -128,8 +145,8 @@ export function BankrollManager({
             <Input
               type="number"
               placeholder="Ex: 5.00"
-              value={baseBet || ''}
-              onChange={(e) => setBaseBet(parseFloat(e.target.value) || 0)}
+              value={localBaseBet || ''}
+              onChange={(e) => setLocalBaseBet(parseFloat(e.target.value) || 0)}
               className="bg-muted/50 border-border/50 h-9 sm:h-10 text-sm"
             />
           </div>
@@ -137,7 +154,7 @@ export function BankrollManager({
           <Button 
             onClick={handleConfigure} 
             className="w-full h-9 sm:h-10 text-sm"
-            disabled={bankroll <= 0 || target <= 0 || baseBet <= 0}
+            disabled={bankroll <= 0 || target <= 0 || localBaseBet <= 0}
           >
             <Calculator className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-2" />
             Configurar Sistema
@@ -172,6 +189,20 @@ export function BankrollManager({
         />
       </div>
 
+      {/* Profit/Loss Display */}
+      <div className={cn(
+        "p-2 sm:p-3 rounded-lg mb-3 sm:mb-4 text-center",
+        totalProfit >= 0 ? "bg-primary/10 border border-primary/30" : "bg-accent/10 border border-accent/30"
+      )}>
+        <p className="text-[10px] sm:text-xs text-muted-foreground">Lucro/Prejuízo da Sessão</p>
+        <p className={cn(
+          "text-lg sm:text-xl font-bold",
+          totalProfit >= 0 ? "text-primary" : "text-accent"
+        )}>
+          {totalProfit >= 0 ? '+' : ''}R$ {totalProfit.toFixed(2)}
+        </p>
+      </div>
+
       {/* Progress to Target */}
       <div className="mb-3 sm:mb-4">
         <div className="flex justify-between text-[10px] sm:text-xs mb-1">
@@ -181,11 +212,11 @@ export function BankrollManager({
         <div className="h-2 sm:h-3 bg-muted rounded-full overflow-hidden">
           <div 
             className="h-full bg-gradient-to-r from-primary to-primary/70 rounded-full transition-all duration-500"
-            style={{ width: `${progress}%` }}
+            style={{ width: `${Math.max(progress, 0)}%` }}
           />
         </div>
         <div className="flex justify-between text-[10px] sm:text-xs mt-1">
-          <span className="text-muted-foreground">R$ {(bankroll + totalProfit).toFixed(2)}</span>
+          <span className="text-muted-foreground">R$ {currentBalance.toFixed(2)}</span>
           <span className="text-primary">R$ {target.toFixed(2)}</span>
         </div>
       </div>
@@ -195,7 +226,7 @@ export function BankrollManager({
         <div className="p-2 sm:p-3 rounded-lg bg-muted/50 text-center">
           <p className="text-[10px] sm:text-xs text-muted-foreground">Banca Atual</p>
           <p className="text-sm sm:text-lg font-bold text-foreground">
-            R$ {(bankroll + totalProfit).toFixed(2)}
+            R$ {currentBalance.toFixed(2)}
           </p>
         </div>
         <div className="p-2 sm:p-3 rounded-lg bg-muted/50 text-center">
@@ -231,7 +262,7 @@ export function BankrollManager({
         <div className="grid grid-cols-3 gap-2 text-[10px] sm:text-xs">
           <div>
             <span className="text-muted-foreground">Base:</span>
-            <span className="ml-1 font-semibold">R$ {baseBet.toFixed(2)}</span>
+            <span className="ml-1 font-semibold">R$ {localBaseBet.toFixed(2)}</span>
           </div>
           <div>
             <span className="text-muted-foreground">Máx Gales:</span>
