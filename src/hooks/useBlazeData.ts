@@ -41,6 +41,21 @@ export function useBlazeData() {
   const [currentPrediction, setCurrentPrediction] = useState<PredictionSignal | null>(null);
   const [galeLevel, setGaleLevel] = useState(0);
   
+  // Bankroll tracking
+  const [baseBet, setBaseBet] = useState<number>(() => {
+    const saved = localStorage.getItem('blaze-base-bet');
+    return saved ? parseFloat(saved) : 0;
+  });
+  const [totalProfit, setTotalProfit] = useState<number>(() => {
+    const saved = localStorage.getItem('blaze-total-profit');
+    return saved ? parseFloat(saved) : 0;
+  });
+  
+  // Save profit to localStorage
+  useEffect(() => {
+    localStorage.setItem('blaze-total-profit', totalProfit.toString());
+  }, [totalProfit]);
+  
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const simulationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const waitingForResult = useRef(false);
@@ -50,6 +65,21 @@ export function useBlazeData() {
   const { toast } = useToast();
   const { playAlertSound } = useAlertSound();
   const { getAIPrediction, isLoading: isAILoading, lastPrediction: aiPrediction, aiStats, consecutiveLosses, isRecalibrating, recordWin, recordLoss } = useAIPrediction();
+
+  // Calculate Martingale bet
+  const calculateMartingaleBet = useCallback((level: number): number => {
+    if (baseBet <= 0) return 0;
+    return baseBet * Math.pow(2, level);
+  }, [baseBet]);
+
+  // Calculate total spent in current sequence
+  const calculateTotalSpent = useCallback((currentLevel: number): number => {
+    let total = 0;
+    for (let i = 0; i <= currentLevel; i++) {
+      total += baseBet * Math.pow(2, i);
+    }
+    return total;
+  }, [baseBet]);
 
   // Calculate stats when rounds change
   useEffect(() => {
@@ -105,23 +135,39 @@ export function useBlazeData() {
     }
   }, []);
 
-  // Handle win - reset to analyzing
+  // Handle win - reset to analyzing and add profit
   const handleWin = useCallback((signal: PredictionSignal) => {
     console.log('WIN! Resetting to analyzing mode');
     const updated = { ...signal, status: 'win' as const };
     updateSignalInDb(updated);
     setSignals(prev => prev.map(s => s.id === signal.id ? updated : s));
     recordWin();
+    
+    // Calculate profit: win amount (2x current bet) minus total spent
+    if (baseBet > 0) {
+      const currentBetAmount = calculateMartingaleBet(galeLevel);
+      const totalSpent = calculateTotalSpent(galeLevel);
+      const winAmount = currentBetAmount * 2; // Blaze pays 2x
+      const profit = winAmount - totalSpent;
+      setTotalProfit(prev => prev + profit);
+      console.log(`Profit: +R$ ${profit.toFixed(2)} (Won: R$ ${winAmount.toFixed(2)}, Spent: R$ ${totalSpent.toFixed(2)})`);
+      
+      toast({
+        title: '✅ ACERTOU!',
+        description: `Lucro: +R$ ${profit.toFixed(2)}`,
+      });
+    } else {
+      toast({
+        title: '✅ ACERTOU!',
+        description: 'Voltando a analisar...',
+      });
+    }
+    
     setCurrentPrediction(null);
     setPredictionState('analyzing');
     setGaleLevel(0);
     waitingForResult.current = false;
-    
-    toast({
-      title: '✅ ACERTOU!',
-      description: 'Voltando a analisar...',
-    });
-  }, [updateSignalInDb, recordWin, toast]);
+  }, [updateSignalInDb, recordWin, toast, baseBet, galeLevel, calculateMartingaleBet, calculateTotalSpent]);
 
   // Handle loss - go to gale or reset
   const handleLoss = useCallback((signal: PredictionSignal, actualColor: BlazeColor) => {
@@ -157,23 +203,37 @@ export function useBlazeData() {
         variant: 'destructive',
       });
     } else {
-      // Max gales reached - go back to analyzing
+      // Max gales reached - go back to analyzing and record total loss
       console.log('LOSS! Max gales reached, resetting to analyzing');
       updateSignalInDb(updated);
       setSignals(prev => prev.map(s => s.id === signal.id ? updated : s));
       recordLoss();
+      
+      // Calculate total loss (all bets in the sequence)
+      if (baseBet > 0) {
+        const totalLoss = calculateTotalSpent(galeLevel);
+        setTotalProfit(prev => prev - totalLoss);
+        console.log(`Loss: -R$ ${totalLoss.toFixed(2)}`);
+        
+        toast({
+          title: '❌ PERDEU',
+          description: `Prejuízo: -R$ ${totalLoss.toFixed(2)}`,
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: '❌ PERDEU',
+          description: 'Máximo de gales atingido. Voltando a analisar...',
+          variant: 'destructive',
+        });
+      }
+      
       setCurrentPrediction(null);
       setPredictionState('analyzing');
       setGaleLevel(0);
       waitingForResult.current = false;
-      
-      toast({
-        title: '❌ PERDEU',
-        description: 'Máximo de gales atingido. Voltando a analisar...',
-        variant: 'destructive',
-      });
     }
-  }, [galeLevel, updateSignalInDb, saveSignalToDb, recordLoss, toast]);
+  }, [galeLevel, updateSignalInDb, saveSignalToDb, recordLoss, toast, baseBet, calculateTotalSpent]);
 
   // Check result when new round arrives
   const checkResult = useCallback((lastRound: BlazeRound) => {
@@ -460,5 +520,14 @@ export function useBlazeData() {
     // Interval settings
     predictionInterval,
     setPredictionInterval,
+    // Bankroll tracking
+    baseBet,
+    setBaseBet,
+    totalProfit,
+    setTotalProfit,
+    resetProfit: () => {
+      setTotalProfit(0);
+      localStorage.removeItem('blaze-total-profit');
+    },
   };
 }
