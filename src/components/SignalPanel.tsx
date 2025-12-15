@@ -111,9 +111,14 @@ export function SignalPanel({ signals }: SignalPanelProps) {
                     <ColorBall color={signal.predictedColor} size="sm" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm truncate">{signal.reason}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {signal.confidence}% confiança
-                      </p>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>{signal.confidence}% confiança</span>
+                        {signal.status === 'loss' && signal.actualResult && (
+                          <span className="flex items-center gap-1 text-accent">
+                            • Saiu: <ColorBall color={signal.actualResult} size="xs" />
+                          </span>
+                        )}
+                      </div>
                     </div>
                     {signal.status === 'win' ? (
                       <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />

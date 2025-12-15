@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { BlazeRound, BlazeStats, PredictionSignal, ConnectionStatus, BlazeColor } from '@/types/blaze';
 import { calculateStats, analyzePatternsAndPredict, generateMockRounds } from '@/lib/blazeAnalyzer';
 import { useToast } from '@/hooks/use-toast';
+import { useAlertSound } from '@/hooks/useAlertSound';
 import { supabase } from '@/integrations/supabase/client';
 
 const POLL_INTERVAL = 3000; // Poll every 3 seconds
@@ -24,6 +25,7 @@ export function useBlazeData() {
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const simulationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
+  const { playAlertSound } = useAlertSound();
 
   // Calculate stats when rounds change
   useEffect(() => {
@@ -45,8 +47,13 @@ export function useBlazeData() {
           : Infinity;
         
         if (timeSinceLastSignal > 30000 || !lastSignal) {
+          const isHighConfidence = prediction.confidence >= 75;
+          
+          // Play alert sound
+          playAlertSound(isHighConfidence);
+          
           toast({
-            title: '🎯 Novo Sinal Gerado!',
+            title: isHighConfidence ? '🔥 SINAL FORTE!' : '🎯 Novo Sinal Gerado!',
             description: `Apostar em ${prediction.predictedColor === 'red' ? 'VERMELHO' : 'PRETO'} - Confiança: ${prediction.confidence}%`,
           });
           return [...prev.slice(-19), prediction];
@@ -54,7 +61,7 @@ export function useBlazeData() {
         return prev;
       });
     }
-  }, [toast]);
+  }, [toast, playAlertSound]);
 
   // Update signal status based on actual results
   useEffect(() => {
@@ -67,7 +74,7 @@ export function useBlazeData() {
         // Check if this signal was for a recent round
         const signalAge = Date.now() - signal.timestamp.getTime();
         if (signalAge > 120000) {
-          return { ...signal, status: 'loss' as const };
+          return { ...signal, status: 'loss' as const, actualResult: lastRound.color };
         }
         
         // Check if the prediction was correct
@@ -77,7 +84,7 @@ export function useBlazeData() {
           } else if (signal.protections > 0) {
             return { ...signal, protections: signal.protections - 1 };
           } else {
-            return { ...signal, status: 'loss' as const };
+            return { ...signal, status: 'loss' as const, actualResult: lastRound.color };
           }
         }
         
