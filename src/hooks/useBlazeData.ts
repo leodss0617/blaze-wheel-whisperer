@@ -28,8 +28,11 @@ export function useBlazeData() {
   const [useAI, setUseAI] = useState(true);
   const [predictionInterval, setPredictionIntervalState] = useState(() => {
     const saved = localStorage.getItem('blaze-prediction-interval');
-    return saved ? parseInt(saved, 10) : 60;
+    return saved ? parseInt(saved, 10) : 2; // Default 2 rounds
   });
+  
+  // Track the round number when the last prediction cycle completed
+  const lastCompletedRoundNumber = useRef<number | null>(null);
   
   // Wrapper to save to localStorage
   const setPredictionInterval = (value: number) => {
@@ -61,7 +64,6 @@ export function useBlazeData() {
   const simulationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const waitingForResult = useRef(false);
   const isGeneratingPrediction = useRef(false);
-  const lastPredictionTime = useRef<number>(0);
   
   const { toast } = useToast();
   const { playAlertSound } = useAlertSound();
@@ -137,12 +139,16 @@ export function useBlazeData() {
   }, []);
 
   // Handle win - reset to analyzing and add profit
-  const handleWin = useCallback((signal: PredictionSignal) => {
+  const handleWin = useCallback((signal: PredictionSignal, lastRoundNumber: number) => {
     console.log('WIN! Resetting to analyzing mode');
     const updated = { ...signal, status: 'win' as const };
     updateSignalInDb(updated);
     setSignals(prev => prev.map(s => s.id === signal.id ? updated : s));
     recordWin();
+    
+    // Mark this round as completed for interval counting
+    lastCompletedRoundNumber.current = lastRoundNumber;
+    console.log('Ciclo de previsão concluído na rodada:', lastRoundNumber);
     
     // Calculate profit: win amount (2x current bet) minus total spent
     if (baseBet > 0) {
@@ -171,13 +177,13 @@ export function useBlazeData() {
   }, [updateSignalInDb, recordWin, toast, baseBet, galeLevel, calculateMartingaleBet, calculateTotalSpent]);
 
   // Handle loss - go to gale or reset
-  const handleLoss = useCallback((signal: PredictionSignal, actualColor: BlazeColor) => {
+  const handleLoss = useCallback((signal: PredictionSignal, actualColor: BlazeColor, lastRoundNumber: number) => {
     const updated = { ...signal, status: 'loss' as const, actualResult: actualColor };
     
     if (galeLevel < MAX_GALES) {
-      // Go to next gale level
+      // Go to next gale level - NOT a complete loss yet
       const nextGale = galeLevel + 1;
-      console.log(`LOSS! Going to Gale ${nextGale}`);
+      console.log(`LOSS no Gale ${galeLevel}! Indo para Gale ${nextGale} - Previsão ainda NÃO concluída`);
       
       // Create new signal for gale
       const galeSignal: PredictionSignal = {
@@ -195,7 +201,7 @@ export function useBlazeData() {
       setCurrentPrediction(galeSignal);
       setGaleLevel(nextGale);
       setPredictionState(nextGale === 1 ? 'gale1' : 'gale2');
-      recordLoss();
+      // Don't record loss yet - only when all gales are exhausted
       waitingForResult.current = true;
       
       toast({
@@ -204,11 +210,15 @@ export function useBlazeData() {
         variant: 'destructive',
       });
     } else {
-      // Max gales reached - go back to analyzing and record total loss
-      console.log('LOSS! Max gales reached, resetting to analyzing');
+      // Max gales reached - NOW the prediction is officially LOST
+      console.log('LOSS! Máximo de gales atingido - Previsão CONCLUÍDA como ERRADA');
       updateSignalInDb(updated);
       setSignals(prev => prev.map(s => s.id === signal.id ? updated : s));
       recordLoss();
+      
+      // Mark this round as completed for interval counting
+      lastCompletedRoundNumber.current = lastRoundNumber;
+      console.log('Ciclo de previsão concluído (LOSS) na rodada:', lastRoundNumber);
       
       // Calculate total loss (all bets in the sequence)
       if (baseBet > 0) {
@@ -249,40 +259,48 @@ export function useBlazeData() {
     
     if (lastRound.color === currentPrediction.predictedColor) {
       console.log('✅ ACERTOU! Cor prevista bateu com resultado');
-      handleWin(currentPrediction);
+      handleWin(currentPrediction, lastRound.number);
     } else if (lastRound.color === 'white') {
       // White doesn't count as loss - wait for next round
       console.log('⚪ Branco apareceu - aguardando próxima rodada');
     } else {
       console.log('❌ ERROU! Previu', currentPrediction.predictedColor, 'mas saiu', lastRound.color);
-      handleLoss(currentPrediction, lastRound.color);
+      handleLoss(currentPrediction, lastRound.color, lastRound.number);
     }
   }, [currentPrediction, galeLevel, handleWin, handleLoss]);
 
-  // Generate prediction when in analyzing state
+  // Generate prediction when in analyzing state - based on round count
   const checkForSignal = useCallback(async (currentRounds: BlazeRound[]) => {
-    // Strict guards to prevent multiple predictions
-    const now = Date.now();
-    const minIntervalMs = predictionInterval * 1000; // Convert seconds to ms
+    if (currentRounds.length === 0) return;
     
+    const lastRound = currentRounds[currentRounds.length - 1];
+    const currentRoundNumber = lastRound.number;
+    
+    // Strict guards to prevent multiple predictions
     if (predictionState !== 'analyzing') {
-      console.log('Not generating - not in analyzing state:', predictionState);
+      console.log('Não gerando - não está em modo análise:', predictionState);
       return;
     }
     
     if (waitingForResult.current) {
-      console.log('Not generating - waiting for result');
+      console.log('Não gerando - aguardando resultado da previsão atual');
       return;
     }
     
     if (isGeneratingPrediction.current) {
-      console.log('Not generating - already generating');
+      console.log('Não gerando - já está gerando');
       return;
     }
     
-    if (now - lastPredictionTime.current < minIntervalMs) {
-      console.log('Not generating - too soon since last prediction');
-      return;
+    // Check rounds passed since last completed prediction
+    if (lastCompletedRoundNumber.current !== null) {
+      const roundsPassed = Math.abs(currentRoundNumber - lastCompletedRoundNumber.current);
+      console.log(`Rodadas desde última previsão concluída: ${roundsPassed} (necessário: ${predictionInterval})`);
+      
+      if (roundsPassed < predictionInterval) {
+        console.log(`Aguardando ${predictionInterval - roundsPassed} rodada(s) antes de nova previsão`);
+        return;
+      }
     }
     
     // Lock prediction generation
@@ -290,12 +308,11 @@ export function useBlazeData() {
     
     try {
       if (useAI) {
-        console.log('Requesting AI prediction...');
+        console.log('Gerando nova previsão AI após intervalo de rodadas...');
         const aiSignal = await getAIPrediction();
         
         // AI hook already filters out signals where should_bet is false
         if (aiSignal) {
-          lastPredictionTime.current = now;
           waitingForResult.current = true;
           setCurrentPrediction(aiSignal);
           setPredictionState('active');
@@ -311,11 +328,11 @@ export function useBlazeData() {
             description: `Apostar em ${aiSignal.predictedColor === 'red' ? 'VERMELHO' : 'PRETO'} - Confiança: ${aiSignal.confidence}%`,
           });
         } else {
-          console.log('AI decided not to bet or no signal returned');
+          console.log('AI decidiu não apostar ou sem sinal');
         }
       }
     } catch (error) {
-      console.error('Error generating prediction:', error);
+      console.error('Erro ao gerar previsão:', error);
     } finally {
       isGeneratingPrediction.current = false;
     }

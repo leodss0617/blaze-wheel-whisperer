@@ -30,11 +30,8 @@ export function AIPanel({
 }: AIPanelProps) {
   const needsRecalibration = consecutiveLosses >= 2;
   
-  const formatInterval = (seconds: number) => {
-    if (seconds < 60) return `${seconds}s`;
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+  const formatInterval = (rounds: number) => {
+    return `${rounds} rodada${rounds > 1 ? 's' : ''}`;
   };
   return (
     <div className={cn(
@@ -177,15 +174,18 @@ export function AIPanel({
           <Slider
             value={[predictionInterval]}
             onValueChange={(v) => onIntervalChange(v[0])}
-            min={30}
-            max={300}
-            step={15}
+            min={1}
+            max={10}
+            step={1}
             className="w-full"
           />
           <div className="flex justify-between text-xs text-muted-foreground mt-1">
-            <span>30s</span>
-            <span>5min</span>
+            <span>1 rodada</span>
+            <span>10 rodadas</span>
           </div>
+          <p className="text-xs text-muted-foreground mt-2 text-center">
+            Só gera nova previsão após a anterior ser totalmente verificada (incluindo gales)
+          </p>
         </div>
       )}
 
