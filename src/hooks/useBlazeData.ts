@@ -34,6 +34,8 @@ export function useBlazeData() {
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const simulationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const waitingForResult = useRef(false);
+  const isGeneratingPrediction = useRef(false);
+  const lastPredictionTime = useRef<number>(0);
   
   const { toast } = useToast();
   const { playAlertSound } = useAlertSound();
@@ -179,53 +181,65 @@ export function useBlazeData() {
 
   // Generate prediction when in analyzing state
   const checkForSignal = useCallback(async (currentRounds: BlazeRound[]) => {
-    // Only generate new predictions when in analyzing state
-    if (predictionState !== 'analyzing' || waitingForResult.current) {
-      console.log('Not generating new prediction - state:', predictionState);
+    // Strict guards to prevent multiple predictions
+    const now = Date.now();
+    const MIN_INTERVAL = 60000; // Minimum 60 seconds between predictions
+    
+    if (predictionState !== 'analyzing') {
+      console.log('Not generating - not in analyzing state:', predictionState);
       return;
     }
     
-    if (useAI) {
-      console.log('Requesting AI prediction...');
-      const aiSignal = await getAIPrediction();
-      if (aiSignal) {
-        waitingForResult.current = true;
-        setCurrentPrediction(aiSignal);
-        setPredictionState('active');
-        setGaleLevel(0);
-        saveSignalToDb(aiSignal);
-        setSignals(prev => [...prev.slice(-19), aiSignal]);
-        return;
-      }
+    if (waitingForResult.current) {
+      console.log('Not generating - waiting for result');
+      return;
     }
     
-    // Fallback to pattern-based prediction
-    const prediction = analyzePatternsAndPredict(currentRounds);
-    if (prediction) {
-      const lastSignal = signals[signals.length - 1];
-      const timeSinceLastSignal = lastSignal 
-        ? Date.now() - lastSignal.timestamp.getTime() 
-        : Infinity;
-      
-      if (timeSinceLastSignal > 30000 || !lastSignal) {
-        waitingForResult.current = true;
-        setCurrentPrediction(prediction);
-        setPredictionState('active');
-        setGaleLevel(0);
-        
-        const isHighConfidence = prediction.confidence >= 75;
-        playAlertSound(isHighConfidence);
-        saveSignalToDb(prediction);
-        
-        toast({
-          title: isHighConfidence ? '🔥 SINAL FORTE!' : '🎯 Novo Sinal Gerado!',
-          description: `Apostar em ${prediction.predictedColor === 'red' ? 'VERMELHO' : 'PRETO'} - Confiança: ${prediction.confidence}%`,
-        });
-        
-        setSignals(prev => [...prev.slice(-19), prediction]);
-      }
+    if (isGeneratingPrediction.current) {
+      console.log('Not generating - already generating');
+      return;
     }
-  }, [predictionState, signals, toast, playAlertSound, saveSignalToDb, useAI, getAIPrediction]);
+    
+    if (now - lastPredictionTime.current < MIN_INTERVAL) {
+      console.log('Not generating - too soon since last prediction');
+      return;
+    }
+    
+    // Lock prediction generation
+    isGeneratingPrediction.current = true;
+    
+    try {
+      if (useAI) {
+        console.log('Requesting AI prediction...');
+        const aiSignal = await getAIPrediction();
+        
+        // AI hook already filters out signals where should_bet is false
+        if (aiSignal) {
+          lastPredictionTime.current = now;
+          waitingForResult.current = true;
+          setCurrentPrediction(aiSignal);
+          setPredictionState('active');
+          setGaleLevel(0);
+          saveSignalToDb(aiSignal);
+          setSignals(prev => [...prev.slice(-19), aiSignal]);
+          
+          const isHighConfidence = aiSignal.confidence >= 75;
+          playAlertSound(isHighConfidence);
+          
+          toast({
+            title: isHighConfidence ? '🔥 SINAL FORTE!' : '🎯 Novo Sinal!',
+            description: `Apostar em ${aiSignal.predictedColor === 'red' ? 'VERMELHO' : 'PRETO'} - Confiança: ${aiSignal.confidence}%`,
+          });
+        } else {
+          console.log('AI decided not to bet or no signal returned');
+        }
+      }
+    } catch (error) {
+      console.error('Error generating prediction:', error);
+    } finally {
+      isGeneratingPrediction.current = false;
+    }
+  }, [predictionState, toast, playAlertSound, saveSignalToDb, useAI, getAIPrediction]);
 
   // Update signal status based on actual results
   useEffect(() => {
