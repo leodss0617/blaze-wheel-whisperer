@@ -11,6 +11,10 @@ export interface AIPrediction {
   analysis: string;
   protections: number;
   should_bet: boolean;
+  afterRound?: {
+    number: number;
+    color: BlazeColor;
+  };
 }
 
 export interface AIStats {
@@ -49,6 +53,12 @@ export function useAIPrediction() {
 
       const prediction: AIPrediction = data.prediction;
       const stats: AIStats = data.stats;
+      const lastRound = data.lastRound;
+
+      // Add lastRound to prediction
+      if (lastRound) {
+        prediction.afterRound = lastRound;
+      }
 
       setLastPrediction(prediction);
       setAiStats(stats);
