@@ -24,6 +24,8 @@ export interface BlazeStats {
   lastColors: BlazeColor[];
 }
 
+export type PredictionState = 'analyzing' | 'active' | 'gale1' | 'gale2';
+
 export interface PredictionSignal {
   id: string;
   predictedColor: BlazeColor;
@@ -32,11 +34,12 @@ export interface PredictionSignal {
   timestamp: Date;
   status: 'pending' | 'win' | 'loss';
   protections: number;
-  actualResult?: BlazeColor; // Color that came out when signal lost
+  actualResult?: BlazeColor;
   afterRound?: {
     number: number;
     color: BlazeColor;
   };
+  galeLevel: number; // 0 = normal, 1 = gale1, 2 = gale2
 }
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';

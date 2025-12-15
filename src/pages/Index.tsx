@@ -32,6 +32,9 @@ const Index = () => {
     aiStats,
     consecutiveLosses,
     isRecalibrating,
+    predictionState,
+    currentPrediction,
+    galeLevel,
   } = useBlazeData();
 
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
@@ -214,7 +217,11 @@ const Index = () => {
               </TabsContent>
 
               <TabsContent value="signals" className="space-y-4 mt-0">
-                <SignalPanel signals={signals} />
+                <SignalPanel 
+                  signals={signals} 
+                  predictionState={predictionState}
+                  currentPrediction={currentPrediction}
+                />
                 <StatsPanel stats={stats} />
               </TabsContent>
 
@@ -231,7 +238,12 @@ const Index = () => {
               </TabsContent>
 
               <TabsContent value="bank" className="space-y-4 mt-0">
-                <BankrollManager consecutiveLosses={consecutiveLosses} />
+                <BankrollManager 
+                  predictionState={predictionState}
+                  currentPrediction={currentPrediction}
+                  galeLevel={galeLevel}
+                  lastRound={lastRound}
+                />
               </TabsContent>
             </Tabs>
           </div>
@@ -247,7 +259,11 @@ const Index = () => {
 
             {/* Center Column - Signals & Analysis */}
             <div className="lg:col-span-5 space-y-6">
-              <SignalPanel signals={signals} />
+              <SignalPanel 
+                signals={signals}
+                predictionState={predictionState}
+                currentPrediction={currentPrediction}
+              />
               <PatternChart rounds={rounds} />
             </div>
 
@@ -262,7 +278,12 @@ const Index = () => {
                 consecutiveLosses={consecutiveLosses}
                 isRecalibrating={isRecalibrating}
               />
-              <BankrollManager consecutiveLosses={consecutiveLosses} />
+              <BankrollManager 
+                predictionState={predictionState}
+                currentPrediction={currentPrediction}
+                galeLevel={galeLevel}
+                lastRound={lastRound}
+              />
               <StatsPanel stats={stats} />
             </div>
           </div>

@@ -125,6 +125,7 @@ export function analyzePatternsAndPredict(rounds: BlazeRound[]): PredictionSigna
     timestamp: new Date(),
     status: 'pending',
     protections,
+    galeLevel: 0,
   };
 }
 

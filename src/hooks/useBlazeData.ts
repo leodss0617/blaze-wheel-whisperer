@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { BlazeRound, BlazeStats, PredictionSignal, ConnectionStatus, BlazeColor } from '@/types/blaze';
+import { BlazeRound, BlazeStats, PredictionSignal, ConnectionStatus, BlazeColor, PredictionState } from '@/types/blaze';
 import { calculateStats, analyzePatternsAndPredict, generateMockRounds } from '@/lib/blazeAnalyzer';
 import { useToast } from '@/hooks/use-toast';
 import { useAlertSound } from '@/hooks/useAlertSound';
@@ -7,6 +7,7 @@ import { useAIPrediction, AIPrediction, AIStats } from '@/hooks/useAIPrediction'
 import { supabase } from '@/integrations/supabase/client';
 
 const POLL_INTERVAL = 3000; // Poll every 3 seconds
+const MAX_GALES = 2; // Maximum number of gales
 
 interface BlazeAPIGame {
   id: string;
@@ -24,9 +25,16 @@ export function useBlazeData() {
   const [isSimulating, setIsSimulating] = useState(false);
   const [lastProcessedId, setLastProcessedId] = useState<string | null>(null);
   const [useAI, setUseAI] = useState(true);
+  
+  // Prediction state management
+  const [predictionState, setPredictionState] = useState<PredictionState>('analyzing');
+  const [currentPrediction, setCurrentPrediction] = useState<PredictionSignal | null>(null);
+  const [galeLevel, setGaleLevel] = useState(0);
+  
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const simulationIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const aiPredictionRef = useRef<number>(0);
+  const waitingForResult = useRef(false);
+  
   const { toast } = useToast();
   const { playAlertSound } = useAlertSound();
   const { getAIPrediction, isLoading: isAILoading, lastPrediction: aiPrediction, aiStats, consecutiveLosses, isRecalibrating, recordWin, recordLoss } = useAIPrediction();
@@ -73,7 +81,6 @@ export function useBlazeData() {
   // Update signal in database
   const updateSignalInDb = useCallback(async (signal: PredictionSignal) => {
     try {
-      // Find by timestamp since we don't have DB id
       await supabase.from('prediction_signals')
         .update({
           status: signal.status,
@@ -86,17 +93,108 @@ export function useBlazeData() {
     }
   }, []);
 
-  // Generate prediction when new round arrives
+  // Handle win - reset to analyzing
+  const handleWin = useCallback((signal: PredictionSignal) => {
+    console.log('WIN! Resetting to analyzing mode');
+    const updated = { ...signal, status: 'win' as const };
+    updateSignalInDb(updated);
+    setSignals(prev => prev.map(s => s.id === signal.id ? updated : s));
+    recordWin();
+    setCurrentPrediction(null);
+    setPredictionState('analyzing');
+    setGaleLevel(0);
+    waitingForResult.current = false;
+    
+    toast({
+      title: '✅ ACERTOU!',
+      description: 'Voltando a analisar...',
+    });
+  }, [updateSignalInDb, recordWin, toast]);
+
+  // Handle loss - go to gale or reset
+  const handleLoss = useCallback((signal: PredictionSignal, actualColor: BlazeColor) => {
+    const updated = { ...signal, status: 'loss' as const, actualResult: actualColor };
+    
+    if (galeLevel < MAX_GALES) {
+      // Go to next gale level
+      const nextGale = galeLevel + 1;
+      console.log(`LOSS! Going to Gale ${nextGale}`);
+      
+      // Create new signal for gale
+      const galeSignal: PredictionSignal = {
+        ...signal,
+        id: crypto.randomUUID(),
+        timestamp: new Date(),
+        status: 'pending',
+        galeLevel: nextGale,
+        reason: `[GALE ${nextGale}] ${signal.reason}`,
+      };
+      
+      updateSignalInDb(updated);
+      saveSignalToDb(galeSignal);
+      setSignals(prev => [...prev.map(s => s.id === signal.id ? updated : s), galeSignal]);
+      setCurrentPrediction(galeSignal);
+      setGaleLevel(nextGale);
+      setPredictionState(nextGale === 1 ? 'gale1' : 'gale2');
+      recordLoss();
+      waitingForResult.current = true;
+      
+      toast({
+        title: `🔄 GALE ${nextGale}`,
+        description: `Tentativa ${nextGale}/${MAX_GALES} - Mesma cor com Martingale`,
+        variant: 'destructive',
+      });
+    } else {
+      // Max gales reached - go back to analyzing
+      console.log('LOSS! Max gales reached, resetting to analyzing');
+      updateSignalInDb(updated);
+      setSignals(prev => prev.map(s => s.id === signal.id ? updated : s));
+      recordLoss();
+      setCurrentPrediction(null);
+      setPredictionState('analyzing');
+      setGaleLevel(0);
+      waitingForResult.current = false;
+      
+      toast({
+        title: '❌ PERDEU',
+        description: 'Máximo de gales atingido. Voltando a analisar...',
+        variant: 'destructive',
+      });
+    }
+  }, [galeLevel, updateSignalInDb, saveSignalToDb, recordLoss, toast]);
+
+  // Check result when new round arrives
+  const checkResult = useCallback((lastRound: BlazeRound) => {
+    if (!currentPrediction || currentPrediction.status !== 'pending') return;
+    
+    if (lastRound.color === currentPrediction.predictedColor) {
+      handleWin(currentPrediction);
+    } else if (lastRound.color === 'white') {
+      // White doesn't count as loss - wait for next round
+      console.log('White appeared - waiting for next round');
+    } else {
+      handleLoss(currentPrediction, lastRound.color);
+    }
+  }, [currentPrediction, handleWin, handleLoss]);
+
+  // Generate prediction when in analyzing state
   const checkForSignal = useCallback(async (currentRounds: BlazeRound[]) => {
-    // Always get AI prediction when enabled (updates the panel)
+    // Only generate new predictions when in analyzing state
+    if (predictionState !== 'analyzing' || waitingForResult.current) {
+      console.log('Not generating new prediction - state:', predictionState);
+      return;
+    }
+    
     if (useAI) {
       console.log('Requesting AI prediction...');
       const aiSignal = await getAIPrediction();
       if (aiSignal) {
-        setSignals(prev => {
-          saveSignalToDb(aiSignal);
-          return [...prev.slice(-19), aiSignal];
-        });
+        waitingForResult.current = true;
+        setCurrentPrediction(aiSignal);
+        setPredictionState('active');
+        setGaleLevel(0);
+        saveSignalToDb(aiSignal);
+        setSignals(prev => [...prev.slice(-19), aiSignal]);
         return;
       }
     }
@@ -104,73 +202,42 @@ export function useBlazeData() {
     // Fallback to pattern-based prediction
     const prediction = analyzePatternsAndPredict(currentRounds);
     if (prediction) {
-      // Check if we should add this signal (not too frequent)
-      setSignals(prev => {
-        const lastSignal = prev[prev.length - 1];
-        const timeSinceLastSignal = lastSignal 
-          ? Date.now() - lastSignal.timestamp.getTime() 
-          : Infinity;
+      const lastSignal = signals[signals.length - 1];
+      const timeSinceLastSignal = lastSignal 
+        ? Date.now() - lastSignal.timestamp.getTime() 
+        : Infinity;
+      
+      if (timeSinceLastSignal > 30000 || !lastSignal) {
+        waitingForResult.current = true;
+        setCurrentPrediction(prediction);
+        setPredictionState('active');
+        setGaleLevel(0);
         
-        if (timeSinceLastSignal > 30000 || !lastSignal) {
-          const isHighConfidence = prediction.confidence >= 75;
-          
-          // Play alert sound
-          playAlertSound(isHighConfidence);
-          
-          // Save signal to database
-          saveSignalToDb(prediction);
-          
-          toast({
-            title: isHighConfidence ? '🔥 SINAL FORTE!' : '🎯 Novo Sinal Gerado!',
-            description: `Apostar em ${prediction.predictedColor === 'red' ? 'VERMELHO' : 'PRETO'} - Confiança: ${prediction.confidence}%`,
-          });
-          return [...prev.slice(-19), prediction];
-        }
-        return prev;
-      });
+        const isHighConfidence = prediction.confidence >= 75;
+        playAlertSound(isHighConfidence);
+        saveSignalToDb(prediction);
+        
+        toast({
+          title: isHighConfidence ? '🔥 SINAL FORTE!' : '🎯 Novo Sinal Gerado!',
+          description: `Apostar em ${prediction.predictedColor === 'red' ? 'VERMELHO' : 'PRETO'} - Confiança: ${prediction.confidence}%`,
+        });
+        
+        setSignals(prev => [...prev.slice(-19), prediction]);
+      }
     }
-  }, [toast, playAlertSound, saveSignalToDb, useAI, getAIPrediction]);
+  }, [predictionState, signals, toast, playAlertSound, saveSignalToDb, useAI, getAIPrediction]);
 
   // Update signal status based on actual results
   useEffect(() => {
-    if (rounds.length > 0 && signals.length > 0) {
+    if (rounds.length > 0 && currentPrediction && waitingForResult.current) {
       const lastRound = rounds[rounds.length - 1];
       
-      setSignals(prev => prev.map(signal => {
-        if (signal.status !== 'pending') return signal;
-        
-        // Check if this signal was for a recent round
-        const signalAge = Date.now() - signal.timestamp.getTime();
-        if (signalAge > 120000) {
-          const updated = { ...signal, status: 'loss' as const, actualResult: lastRound.color };
-          updateSignalInDb(updated);
-          recordLoss(); // Track consecutive loss
-          return updated;
-        }
-        
-        // Check if the prediction was correct
-        if (lastRound.timestamp > signal.timestamp) {
-          if (lastRound.color === signal.predictedColor) {
-            const updated = { ...signal, status: 'win' as const };
-            updateSignalInDb(updated);
-            recordWin(); // Reset consecutive losses
-            return updated;
-          } else if (signal.protections > 0) {
-            const updated = { ...signal, protections: signal.protections - 1 };
-            updateSignalInDb(updated);
-            return updated;
-          } else {
-            const updated = { ...signal, status: 'loss' as const, actualResult: lastRound.color };
-            updateSignalInDb(updated);
-            recordLoss(); // Track consecutive loss
-            return updated;
-          }
-        }
-        
-        return signal;
-      }));
+      // Check if this is a new round after the prediction
+      if (lastRound.timestamp > currentPrediction.timestamp) {
+        checkResult(lastRound);
+      }
     }
-  }, [rounds, updateSignalInDb, recordWin, recordLoss]);
+  }, [rounds, currentPrediction, checkResult]);
 
   const convertBlazeGame = (game: BlazeAPIGame): BlazeRound => {
     const colorMap: Record<number, BlazeColor> = {
@@ -215,20 +282,17 @@ export function useBlazeData() {
 
       if (isInitial) {
         setRounds(newRounds);
-        // Save all initial rounds to DB
         newRounds.forEach(round => saveRoundToDb(round));
         if (newRounds.length > 0) {
           setLastProcessedId(newRounds[newRounds.length - 1].id);
         }
       } else {
-        // Find new rounds that we haven't processed yet
         setRounds(prev => {
           const existingIds = new Set(prev.map(r => r.id));
           const actuallyNewRounds = newRounds.filter(r => !existingIds.has(r.id));
           
           if (actuallyNewRounds.length > 0) {
             console.log(`Found ${actuallyNewRounds.length} new rounds`);
-            // Save new rounds to DB
             actuallyNewRounds.forEach(round => saveRoundToDb(round));
             
             const updated = [...prev, ...actuallyNewRounds].slice(-100);
@@ -263,7 +327,6 @@ export function useBlazeData() {
     setConnectionStatus('connecting');
     
     try {
-      // Initial fetch
       await fetchBlazeData(true);
       
       setConnectionStatus('connected');
@@ -272,7 +335,6 @@ export function useBlazeData() {
         description: 'Recebendo dados em tempo real',
       });
 
-      // Start polling for updates
       pollIntervalRef.current = setInterval(() => {
         fetchBlazeData(false);
       }, POLL_INTERVAL);
@@ -294,6 +356,10 @@ export function useBlazeData() {
       pollIntervalRef.current = null;
     }
     setConnectionStatus('disconnected');
+    setCurrentPrediction(null);
+    setPredictionState('analyzing');
+    setGaleLevel(0);
+    waitingForResult.current = false;
   }, []);
 
   // Simulation mode for testing
@@ -303,7 +369,6 @@ export function useBlazeData() {
     setIsSimulating(true);
     setConnectionStatus('connected');
     
-    // Generate initial data
     const initialRounds = generateMockRounds(30);
     setRounds(initialRounds);
     
@@ -312,7 +377,6 @@ export function useBlazeData() {
       description: 'Gerando dados de teste',
     });
 
-    // Add new rounds periodically
     simulationIntervalRef.current = setInterval(() => {
       setRounds(prev => {
         const newRound = generateMockRounds(1)[0];
@@ -332,6 +396,10 @@ export function useBlazeData() {
     }
     setIsSimulating(false);
     setConnectionStatus('disconnected');
+    setCurrentPrediction(null);
+    setPredictionState('analyzing');
+    setGaleLevel(0);
+    waitingForResult.current = false;
   }, []);
 
   // Cleanup on unmount
@@ -361,5 +429,9 @@ export function useBlazeData() {
     getAIPrediction,
     consecutiveLosses,
     isRecalibrating,
+    // Prediction state
+    predictionState,
+    currentPrediction,
+    galeLevel,
   };
 }
