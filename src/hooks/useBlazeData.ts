@@ -323,12 +323,18 @@ export function useBlazeData() {
     if (rounds.length > 0 && currentPrediction && waitingForResult.current) {
       const lastRound = rounds[rounds.length - 1];
       
-      // Check if this is a new round after the prediction
-      if (lastRound.timestamp > currentPrediction.timestamp) {
-        console.log('=== NOVA RODADA DETECTADA ===');
-        console.log('Timestamp previsão:', currentPrediction.timestamp.toISOString());
-        console.log('Timestamp rodada:', lastRound.timestamp.toISOString());
-        console.log('afterRound info:', currentPrediction.afterRound);
+      // Check if this is a NEW round (different from the one used for prediction)
+      // Use round number instead of timestamp to avoid clock sync issues
+      const afterRoundNumber = currentPrediction.afterRound?.number;
+      const isNewRound = afterRoundNumber !== undefined && lastRound.number !== afterRoundNumber;
+      
+      console.log('=== VERIFICANDO SE É NOVA RODADA ===');
+      console.log('Rodada atual:', lastRound.number, '-', lastRound.color);
+      console.log('Rodada após previsão (afterRound):', afterRoundNumber);
+      console.log('É nova rodada?', isNewRound);
+      
+      if (isNewRound) {
+        console.log('✓ Nova rodada detectada! Verificando resultado...');
         checkResult(lastRound);
       }
     }
