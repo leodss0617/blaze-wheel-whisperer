@@ -8,6 +8,7 @@ import { PatternChart } from '@/components/PatternChart';
 import { AIPanel } from '@/components/AIPanel';
 import { CountdownTimer } from '@/components/CountdownTimer';
 import { BankrollManager } from '@/components/BankrollManager';
+import { BrasiliaClockDisplay } from '@/components/BrasiliaClockDisplay';
 import { Flame, Brain, Activity, BarChart3, Wallet, Target, Download } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -98,6 +99,7 @@ const Index = () => {
 
               {/* Status Badges - Desktop */}
               <div className="hidden sm:flex items-center gap-2">
+                <BrasiliaClockDisplay />
                 {showInstallPrompt && (
                   <Button 
                     variant="outline" 

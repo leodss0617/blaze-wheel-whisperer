@@ -5,6 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAlertSound } from '@/hooks/useAlertSound';
 import { useAIPrediction, AIPrediction, AIStats } from '@/hooks/useAIPrediction';
 import { supabase } from '@/integrations/supabase/client';
+import { formatBrasiliaTime } from '@/components/BrasiliaClockDisplay';
 
 const POLL_INTERVAL = 3000; // Poll every 3 seconds
 const MAX_GALES = 2; // Maximum number of gales
@@ -240,8 +241,10 @@ export function useBlazeData() {
     if (!currentPrediction || currentPrediction.status !== 'pending') return;
     
     console.log('=== VERIFICANDO RESULTADO ===');
+    console.log('🕐 Horário Brasília:', formatBrasiliaTime(new Date()));
     console.log('Previsão:', currentPrediction.predictedColor);
     console.log('Resultado da rodada:', lastRound.color, '- Número:', lastRound.number);
+    console.log('Horário da rodada (Brasília):', formatBrasiliaTime(lastRound.timestamp));
     console.log('Gale Level:', galeLevel);
     
     if (lastRound.color === currentPrediction.predictedColor) {
@@ -329,7 +332,8 @@ export function useBlazeData() {
       const isNewRound = afterRoundNumber !== undefined && lastRound.number !== afterRoundNumber;
       
       console.log('=== VERIFICANDO SE É NOVA RODADA ===');
-      console.log('Rodada atual:', lastRound.number, '-', lastRound.color);
+      console.log('🕐 Horário Brasília:', formatBrasiliaTime(new Date()));
+      console.log('Rodada atual:', lastRound.number, '-', lastRound.color, '- Hora:', formatBrasiliaTime(lastRound.timestamp));
       console.log('Rodada após previsão (afterRound):', afterRoundNumber);
       console.log('É nova rodada?', isNewRound);
       
