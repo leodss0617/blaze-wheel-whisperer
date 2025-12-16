@@ -54,6 +54,123 @@
   box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
 }
 
+/* Timer Display */
+.bap-timer-display {
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+}
+
+.bap-timer-display.phase-betting {
+  border-color: rgba(0, 255, 136, 0.5);
+  box-shadow: 0 0 15px rgba(0, 255, 136, 0.2);
+}
+
+.bap-timer-display.phase-rolling {
+  border-color: rgba(255, 68, 68, 0.5);
+  box-shadow: 0 0 15px rgba(255, 68, 68, 0.2);
+}
+
+.bap-timer-display.phase-urgent {
+  border-color: rgba(255, 200, 0, 0.8);
+  box-shadow: 0 0 20px rgba(255, 200, 0, 0.4);
+  animation: urgentPulse 0.5s ease-in-out infinite;
+}
+
+@keyframes urgentPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+
+.bap-timer-label {
+  font-size: 10px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+
+.bap-timer-value {
+  font-size: 28px;
+  font-weight: 800;
+  font-family: 'Courier New', monospace;
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+  margin: 4px 0;
+}
+
+.bap-timer-value.phase-betting {
+  color: #00ff88;
+  text-shadow: 0 0 15px rgba(0, 255, 136, 0.5);
+}
+
+.bap-timer-value.phase-rolling {
+  color: #ff4444;
+  text-shadow: 0 0 15px rgba(255, 68, 68, 0.5);
+}
+
+.bap-timer-value.phase-urgent {
+  color: #ffc800;
+  text-shadow: 0 0 20px rgba(255, 200, 0, 0.7);
+  animation: urgentBlink 0.3s ease-in-out infinite;
+}
+
+@keyframes urgentBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.bap-timer-phase {
+  font-size: 11px;
+  font-weight: 600;
+  color: #888;
+  margin-bottom: 8px;
+}
+
+.bap-timer-phase.phase-betting {
+  color: #00ff88;
+}
+
+.bap-timer-phase.phase-rolling {
+  color: #ff4444;
+}
+
+.bap-timer-phase.phase-urgent {
+  color: #ffc800;
+}
+
+.bap-timer-bar {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.bap-timer-progress {
+  height: 100%;
+  background: linear-gradient(90deg, #00ff88, #00cc66);
+  border-radius: 2px;
+  transition: width 0.1s linear;
+}
+
+.bap-timer-progress.phase-rolling {
+  background: linear-gradient(90deg, #ff4444, #cc0000);
+}
+
+.bap-timer-progress.phase-urgent {
+  background: linear-gradient(90deg, #ffc800, #ff8800);
+  animation: progressPulse 0.3s ease-in-out infinite;
+}
+
+@keyframes progressPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 .bap-status {
   margin-bottom: 12px;
 }

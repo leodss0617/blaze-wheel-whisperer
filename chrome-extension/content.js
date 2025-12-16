@@ -21,11 +21,13 @@
   let lastBetTime = 0;
   let connectionStatus = 'disconnected';
   let lastProcessedSignalTime = 0;
+  let timerUpdateInterval = null;
 
   // Configurações
   const CONFIG = {
     minBetInterval: 5000, // 5 segundos entre apostas
     checkInterval: 1000, // Verificar estado a cada 1 segundo
+    timerUpdateInterval: 100, // Atualizar timer a cada 100ms
     maxRetries: 3,
     localStorageKey: 'blaze-auto-bet-signal',
   };
@@ -45,6 +47,14 @@
       <div class="bap-header">
         <span class="bap-title">🤖 Auto Bet IA</span>
         <button class="bap-toggle" id="bap-toggle">OFF</button>
+      </div>
+      <div class="bap-timer-display" id="bap-timer-display">
+        <div class="bap-timer-label">⏱️ Timer Blaze</div>
+        <div class="bap-timer-value" id="bap-timer-value">--</div>
+        <div class="bap-timer-phase" id="bap-timer-phase">Detectando...</div>
+        <div class="bap-timer-bar">
+          <div class="bap-timer-progress" id="bap-timer-progress"></div>
+        </div>
       </div>
       <div class="bap-status">
         <div class="bap-row">
@@ -77,6 +87,9 @@
     document.getElementById('bap-toggle').addEventListener('click', toggleAutoBet);
     document.getElementById('bap-test-signal').addEventListener('click', testSignal);
     document.getElementById('bap-check-elements').addEventListener('click', debugUI);
+    
+    // Iniciar atualização do timer
+    startTimerUpdate();
   }
 
   function testSignal() {
@@ -95,6 +108,223 @@
     localStorage.setItem(CONFIG.localStorageKey, JSON.stringify(testData));
     log('Sinal de teste salvo no localStorage:', testData);
     addLog('✅ Sinal de teste enviado - verifique o console');
+  }
+
+  // ============= TIMER DETECTION =============
+  
+  function startTimerUpdate() {
+    log('Iniciando monitoramento do timer...');
+    
+    // Limpar intervalo anterior se existir
+    if (timerUpdateInterval) {
+      clearInterval(timerUpdateInterval);
+    }
+    
+    // Atualizar timer a cada 100ms para precisão
+    timerUpdateInterval = setInterval(updateTimerDisplay, CONFIG.timerUpdateInterval);
+    
+    // Primeira atualização imediata
+    updateTimerDisplay();
+  }
+  
+  function stopTimerUpdate() {
+    if (timerUpdateInterval) {
+      clearInterval(timerUpdateInterval);
+      timerUpdateInterval = null;
+    }
+  }
+  
+  function updateTimerDisplay() {
+    const timerData = detectBlazeTimer();
+    
+    const timerValueEl = document.getElementById('bap-timer-value');
+    const timerPhaseEl = document.getElementById('bap-timer-phase');
+    const timerProgressEl = document.getElementById('bap-timer-progress');
+    const timerDisplayEl = document.getElementById('bap-timer-display');
+    
+    if (!timerValueEl || !timerPhaseEl || !timerProgressEl || !timerDisplayEl) return;
+    
+    if (timerData.detected) {
+      // Atualizar valor do timer
+      timerValueEl.textContent = timerData.formattedTime;
+      timerValueEl.className = 'bap-timer-value ' + timerData.phaseClass;
+      
+      // Atualizar fase
+      timerPhaseEl.textContent = timerData.phaseText;
+      timerPhaseEl.className = 'bap-timer-phase ' + timerData.phaseClass;
+      
+      // Atualizar barra de progresso
+      timerProgressEl.style.width = timerData.progressPercent + '%';
+      timerProgressEl.className = 'bap-timer-progress ' + timerData.phaseClass;
+      
+      // Classe geral do display
+      timerDisplayEl.className = 'bap-timer-display ' + timerData.phaseClass;
+    } else {
+      timerValueEl.textContent = '--';
+      timerValueEl.className = 'bap-timer-value';
+      timerPhaseEl.textContent = 'Timer não detectado';
+      timerPhaseEl.className = 'bap-timer-phase';
+      timerProgressEl.style.width = '0%';
+      timerDisplayEl.className = 'bap-timer-display';
+    }
+  }
+  
+  function detectBlazeTimer() {
+    const result = {
+      detected: false,
+      seconds: null,
+      formattedTime: '--',
+      phase: 'unknown',
+      phaseText: 'Desconhecido',
+      phaseClass: '',
+      progressPercent: 0,
+      maxTime: 30 // Tempo máximo típico de apostas
+    };
+    
+    // Seletores específicos para timer do Blaze Double
+    const timerSelectors = [
+      // Seletores de timer específicos Blaze
+      '.time-left',
+      '.timer-value',
+      '.countdown',
+      '.countdown-timer',
+      '[class*="timer"]',
+      '[class*="countdown"]',
+      '[class*="time-left"]',
+      '.roulette-timer',
+      '.double-timer',
+      '.game-timer',
+      
+      // Elementos com tempo numérico
+      '[class*="seconds"]',
+      '[class*="clock"]',
+    ];
+    
+    for (const selector of timerSelectors) {
+      const elements = document.querySelectorAll(selector);
+      for (const el of elements) {
+        if (el.offsetParent === null) continue; // Não visível
+        
+        const text = el.textContent?.trim() || '';
+        const timeMatch = parseTimeFromText(text);
+        
+        if (timeMatch !== null) {
+          result.detected = true;
+          result.seconds = timeMatch;
+          result.formattedTime = formatTime(timeMatch);
+          
+          // Determinar fase baseado no tempo
+          if (timeMatch > 0) {
+            result.phase = 'betting';
+            result.phaseText = '🟢 APOSTAS ABERTAS';
+            result.phaseClass = 'phase-betting';
+            result.progressPercent = Math.min(100, (timeMatch / result.maxTime) * 100);
+          } else {
+            result.phase = 'rolling';
+            result.phaseText = '🔴 GIRANDO';
+            result.phaseClass = 'phase-rolling';
+            result.progressPercent = 0;
+          }
+          
+          // Alerta quando tempo baixo
+          if (timeMatch > 0 && timeMatch <= 5) {
+            result.phaseText = '⚡ ÚLTIMOS SEGUNDOS!';
+            result.phaseClass = 'phase-urgent';
+          }
+          
+          return result;
+        }
+      }
+    }
+    
+    // Detectar fase pelo estado visual se timer não encontrado
+    const rollingIndicators = document.querySelectorAll('[class*="rolling"], [class*="spinning"], [class*="girando"]');
+    for (const el of rollingIndicators) {
+      if (el.offsetParent !== null) {
+        result.detected = true;
+        result.phase = 'rolling';
+        result.phaseText = '🔴 GIRANDO';
+        result.phaseClass = 'phase-rolling';
+        result.formattedTime = '⏳';
+        return result;
+      }
+    }
+    
+    const waitingIndicators = document.querySelectorAll('[class*="waiting"], [class*="aguardando"], [class*="bet-open"]');
+    for (const el of waitingIndicators) {
+      if (el.offsetParent !== null) {
+        result.detected = true;
+        result.phase = 'betting';
+        result.phaseText = '🟢 APOSTAS ABERTAS';
+        result.phaseClass = 'phase-betting';
+        result.formattedTime = '✓';
+        return result;
+      }
+    }
+    
+    // Tentar detectar por MutationObserver no próximo ciclo
+    return result;
+  }
+  
+  function parseTimeFromText(text) {
+    if (!text) return null;
+    
+    // Limpar texto
+    text = text.trim().toLowerCase();
+    
+    // Padrões de tempo
+    // "15.5", "15,5", "15.50s", "15s"
+    const patterns = [
+      /^(\d+)[.,](\d+)\s*s?$/,           // 15.5 ou 15,5 ou 15.5s
+      /^(\d+)\s*s$/,                       // 15s
+      /^(\d+)$/,                           // 15
+      /^(\d+):(\d+)$/,                     // 0:15
+      /(\d+)[.,]?(\d*)\s*(?:segundo|second|seg|s)/i, // "15 segundos"
+    ];
+    
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) {
+        if (match[2] !== undefined && pattern.source.includes(':')) {
+          // Formato MM:SS
+          return parseInt(match[1]) * 60 + parseInt(match[2]);
+        } else if (match[2] !== undefined && match[2] !== '') {
+          // Formato decimal
+          return parseFloat(match[1] + '.' + match[2]);
+        } else {
+          return parseFloat(match[1]);
+        }
+      }
+    }
+    
+    // Último recurso: tentar extrair qualquer número
+    const numMatch = text.match(/(\d+[.,]?\d*)/);
+    if (numMatch) {
+      const num = parseFloat(numMatch[1].replace(',', '.'));
+      // Só considerar se parecer ser segundos (0-60)
+      if (num >= 0 && num <= 60) {
+        return num;
+      }
+    }
+    
+    return null;
+  }
+  
+  function formatTime(seconds) {
+    if (seconds === null) return '--';
+    
+    if (seconds >= 60) {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+    
+    // Mostrar com decimal se for menor que 10
+    if (seconds < 10) {
+      return seconds.toFixed(1) + 's';
+    }
+    
+    return Math.floor(seconds) + 's';
   }
 
   function debugUI() {
