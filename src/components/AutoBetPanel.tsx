@@ -107,7 +107,7 @@ export function AutoBetPanel({
           </div>
           <div className="flex items-center gap-2">
             <span className="font-bold text-blaze-gold">
-              R$ {stats.balance.toFixed(2)}
+              R$ {(typeof stats.balance === 'number' ? stats.balance : 0).toFixed(2)}
             </span>
             <Button 
               variant="ghost" 
