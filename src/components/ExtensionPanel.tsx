@@ -1,84 +1,43 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Download, Chrome, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Download, Chrome, CheckCircle2, AlertCircle, ExternalLink, Wifi, WifiOff, Activity } from 'lucide-react';
+import { useExtensionBridge } from '@/hooks/useExtensionBridge';
+import { ColorBall } from './ColorBall';
 import type { PredictionSignal } from '@/types/blaze';
-
-declare global {
-  interface Window {
-    chrome?: {
-      runtime?: {
-        sendMessage: (extensionId: string, message: unknown, callback?: (response: unknown) => void) => void;
-      };
-    };
-  }
-}
 
 interface ExtensionPanelProps {
   currentPrediction: PredictionSignal | null;
   betAmount: number;
   galeLevel: number;
+  onExtensionResults?: (rounds: { color: string; number: number; timestamp: Date }[]) => void;
 }
 
-export function ExtensionPanel({ currentPrediction, betAmount, galeLevel }: ExtensionPanelProps) {
-  const [extensionInstalled, setExtensionInstalled] = useState(false);
-  const [lastSentSignal, setLastSentSignal] = useState<string | null>(null);
+export function ExtensionPanel({ currentPrediction, betAmount, galeLevel, onExtensionResults }: ExtensionPanelProps) {
+  const {
+    extensionData,
+    sendPrediction,
+    convertResultsToRounds,
+    isInstalled,
+    isConnected,
+  } = useExtensionBridge();
 
-  useEffect(() => {
-    const checkExtension = () => {
-      try {
-        const extensionCheck = localStorage.getItem('blaze-extension-installed');
-        if (extensionCheck === 'true') {
-          setExtensionInstalled(true);
-        }
-      } catch {
-        setExtensionInstalled(false);
-      }
-    };
-
-    checkExtension();
-    const interval = setInterval(checkExtension, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
+  // Send prediction to extension when it changes
   useEffect(() => {
     if (currentPrediction && currentPrediction.predictedColor !== 'white') {
-      sendSignalToExtension(currentPrediction.predictedColor as 'red' | 'black', betAmount, currentPrediction.confidence);
+      sendPrediction(currentPrediction, betAmount, galeLevel);
     }
-  }, [currentPrediction, betAmount, galeLevel]);
+  }, [currentPrediction, betAmount, galeLevel, sendPrediction]);
 
-  const sendSignalToExtension = (color: 'red' | 'black', amount: number, confidence: number) => {
-    const signal = {
-      type: 'BET_SIGNAL',
-      data: {
-        color,
-        amount,
-        confidence,
-        galeLevel,
-        timestamp: Date.now()
-      }
-    };
-
-    window.postMessage(signal, '*');
-
-    try {
-      localStorage.setItem('blaze-auto-bet-signal', JSON.stringify(signal.data));
-      setLastSentSignal(`${color === 'red' ? 'VERMELHO' : 'PRETO'} - R$ ${amount.toFixed(2)}`);
-    } catch (e) {
-      console.error('Erro ao salvar sinal:', e);
+  // Notify parent about extension results
+  useEffect(() => {
+    if (onExtensionResults && extensionData.results.length > 0) {
+      const rounds = convertResultsToRounds(extensionData.results);
+      onExtensionResults(rounds);
     }
-
-    try {
-      const channel = new BroadcastChannel('blaze-auto-bet');
-      channel.postMessage(signal);
-      channel.close();
-    } catch {
-      // BroadcastChannel não suportado
-    }
-
-    console.log('📡 Sinal enviado para extensão:', signal);
-  };
+  }, [extensionData.results, onExtensionResults, convertResultsToRounds]);
 
   const downloadExtension = () => {
     alert(
@@ -92,43 +51,107 @@ export function ExtensionPanel({ currentPrediction, betAmount, galeLevel }: Exte
     );
   };
 
+  const recentResults = extensionData.results.slice(0, 10);
+  const lastActivity = extensionData.status.lastActivity;
+  const activityText = lastActivity 
+    ? `${Math.round((Date.now() - lastActivity.getTime()) / 1000)}s atrás`
+    : 'Sem atividade';
+
   return (
     <Card className="bg-card/50 backdrop-blur border-primary/20">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm flex items-center gap-2">
-          <Chrome className="h-4 w-4 text-primary" />
-          Extensão Chrome
+        <CardTitle className="text-sm flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Chrome className="h-4 w-4 text-primary" />
+            Extensão Chrome
+          </div>
+          {isConnected && (
+            <Activity className="h-3 w-3 text-green-400 animate-pulse" />
+          )}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">Status:</span>
-          <Badge variant={extensionInstalled ? 'default' : 'secondary'} className="text-xs">
-            {extensionInstalled ? (
-              <>
-                <CheckCircle2 className="h-3 w-3 mr-1" />
-                Instalada
-              </>
-            ) : (
-              <>
-                <AlertCircle className="h-3 w-3 mr-1" />
-                Não detectada
-              </>
-            )}
-          </Badge>
+        {/* Status */}
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Instalada:</span>
+            <Badge variant={isInstalled ? 'default' : 'secondary'} className="text-[10px] px-1.5">
+              {isInstalled ? (
+                <><CheckCircle2 className="h-2.5 w-2.5 mr-0.5" /> Sim</>
+              ) : (
+                <><AlertCircle className="h-2.5 w-2.5 mr-0.5" /> Não</>
+              )}
+            </Badge>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Conexão:</span>
+            <Badge variant={isConnected ? 'default' : 'outline'} className="text-[10px] px-1.5">
+              {isConnected ? (
+                <><Wifi className="h-2.5 w-2.5 mr-0.5" /> Ativa</>
+              ) : (
+                <><WifiOff className="h-2.5 w-2.5 mr-0.5" /> Inativa</>
+              )}
+            </Badge>
+          </div>
         </div>
 
-        {lastSentSignal && (
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">Último sinal:</span>
-            <span className="text-xs font-medium">{lastSentSignal}</span>
+        {/* Last Activity */}
+        {isInstalled && (
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">Última atividade:</span>
+            <span className={isConnected ? 'text-green-400' : 'text-muted-foreground'}>
+              {activityText}
+            </span>
           </div>
         )}
 
-        {!extensionInstalled && (
+        {/* Last Signal Sent */}
+        {extensionData.lastSignalSent && (
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">Último sinal:</span>
+            <span className="font-medium text-primary">{extensionData.lastSignalSent}</span>
+          </div>
+        )}
+
+        {/* Extension Results */}
+        {recentResults.length > 0 && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">Resultados (extensão):</span>
+              <span className="text-muted-foreground">{recentResults.length} recentes</span>
+            </div>
+            <ScrollArea className="h-[52px]">
+              <div className="flex gap-1 flex-wrap">
+                {recentResults.map((result, idx) => (
+                  <ColorBall 
+                    key={`${result.timestamp}-${idx}`}
+                    color={result.color || 'white'}
+                    number={result.number}
+                    size="sm"
+                  />
+                ))}
+              </div>
+            </ScrollArea>
+          </div>
+        )}
+
+        {/* Active Signal */}
+        {isConnected && currentPrediction && currentPrediction.predictedColor !== 'white' && (
+          <div className="p-2 rounded bg-primary/10 border border-primary/20">
+            <p className="text-xs text-center">
+              🎯 Sinal ativo: <strong>{currentPrediction.predictedColor === 'red' ? 'VERMELHO' : 'PRETO'}</strong>
+            </p>
+            <p className="text-[10px] text-center text-muted-foreground">
+              Extensão executará automaticamente
+            </p>
+          </div>
+        )}
+
+        {/* Installation Instructions */}
+        {!isInstalled && (
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">
-              Instale a extensão para automação de apostas no site da Blaze.
+              Instale a extensão para automação no site da Blaze.
             </p>
             <div className="flex gap-2">
               <Button
@@ -153,25 +176,14 @@ export function ExtensionPanel({ currentPrediction, betAmount, galeLevel }: Exte
           </div>
         )}
 
-        {extensionInstalled && currentPrediction && currentPrediction.predictedColor !== 'white' && (
-          <div className="p-2 rounded bg-primary/10 border border-primary/20">
-            <p className="text-xs text-center">
-              🎯 Sinal ativo: <strong>{currentPrediction.predictedColor === 'red' ? 'VERMELHO' : 'PRETO'}</strong>
-            </p>
-            <p className="text-xs text-center text-muted-foreground">
-              A extensão irá apostar automaticamente
-            </p>
-          </div>
-        )}
-
+        {/* How it works */}
         <div className="text-xs text-muted-foreground border-t border-border pt-2">
-          <p className="font-medium mb-1">Como funciona:</p>
-          <ol className="list-decimal list-inside space-y-0.5 text-[10px]">
-            <li>Instale a extensão no Chrome</li>
-            <li>Abra o site do Blaze e faça login</li>
-            <li>Ative a automação no painel da extensão</li>
-            <li>Os sinais daqui serão executados automaticamente!</li>
-          </ol>
+          <p className="font-medium mb-1">Comunicação bidirecional:</p>
+          <ul className="list-disc list-inside space-y-0.5 text-[10px]">
+            <li>App → Extensão: sinais de aposta</li>
+            <li>Extensão → App: resultados em tempo real</li>
+            <li>Sincronização via localStorage + BroadcastChannel</li>
+          </ul>
         </div>
       </CardContent>
     </Card>
