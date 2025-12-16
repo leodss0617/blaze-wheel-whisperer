@@ -3,8 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Download, Chrome, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
+import type { PredictionSignal } from '@/types/blaze';
 
-// Declaração de tipos para Chrome Extension API
 declare global {
   interface Window {
     chrome?: {
@@ -16,7 +16,7 @@ declare global {
 }
 
 interface ExtensionPanelProps {
-  currentPrediction: { predictedColor: 'red' | 'black' | 'white'; confidence: number } | null;
+  currentPrediction: PredictionSignal | null;
   betAmount: number;
   galeLevel: number;
 }
@@ -25,10 +25,8 @@ export function ExtensionPanel({ currentPrediction, betAmount, galeLevel }: Exte
   const [extensionInstalled, setExtensionInstalled] = useState(false);
   const [lastSentSignal, setLastSentSignal] = useState<string | null>(null);
 
-  // Verificar se a extensão está instalada
   useEffect(() => {
     const checkExtension = () => {
-      // Tentar comunicar com a extensão via localStorage
       try {
         const extensionCheck = localStorage.getItem('blaze-extension-installed');
         if (extensionCheck === 'true') {
@@ -44,12 +42,11 @@ export function ExtensionPanel({ currentPrediction, betAmount, galeLevel }: Exte
     return () => clearInterval(interval);
   }, []);
 
-  // Enviar sinal para a extensão quando houver uma previsão
   useEffect(() => {
     if (currentPrediction && currentPrediction.predictedColor !== 'white') {
       sendSignalToExtension(currentPrediction.predictedColor as 'red' | 'black', betAmount, currentPrediction.confidence);
     }
-  }, [currentPrediction, betAmount]);
+  }, [currentPrediction, betAmount, galeLevel]);
 
   const sendSignalToExtension = (color: 'red' | 'black', amount: number, confidence: number) => {
     const signal = {
@@ -63,10 +60,8 @@ export function ExtensionPanel({ currentPrediction, betAmount, galeLevel }: Exte
       }
     };
 
-    // Método 1: Via postMessage para window (caso a extensão esteja escutando)
     window.postMessage(signal, '*');
 
-    // Método 2: Via localStorage (a extensão pode monitorar mudanças)
     try {
       localStorage.setItem('blaze-auto-bet-signal', JSON.stringify(signal.data));
       setLastSentSignal(`${color === 'red' ? 'VERMELHO' : 'PRETO'} - R$ ${amount.toFixed(2)}`);
@@ -74,12 +69,11 @@ export function ExtensionPanel({ currentPrediction, betAmount, galeLevel }: Exte
       console.error('Erro ao salvar sinal:', e);
     }
 
-    // Método 3: Via BroadcastChannel
     try {
       const channel = new BroadcastChannel('blaze-auto-bet');
       channel.postMessage(signal);
       channel.close();
-    } catch (e) {
+    } catch {
       // BroadcastChannel não suportado
     }
 
@@ -87,8 +81,6 @@ export function ExtensionPanel({ currentPrediction, betAmount, galeLevel }: Exte
   };
 
   const downloadExtension = () => {
-    // Criar um link para baixar a pasta da extensão como zip
-    // Por enquanto, mostrar instruções
     alert(
       '📥 Para instalar a extensão:\n\n' +
       '1. Acesse o código do projeto\n' +
