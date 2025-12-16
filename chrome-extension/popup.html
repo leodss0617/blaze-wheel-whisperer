@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blaze Auto Bet</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      width: 320px;
+      min-height: 400px;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #fff;
+    }
+    
+    .header {
+      background: linear-gradient(135deg, #ff3366 0%, #ff0844 100%);
+      padding: 20px;
+      text-align: center;
+    }
+    
+    .header h1 {
+      font-size: 18px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    
+    .header p {
+      font-size: 12px;
+      opacity: 0.9;
+      margin-top: 4px;
+    }
+    
+    .content {
+      padding: 20px;
+    }
+    
+    .status-card {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .status-row:last-child {
+      border-bottom: none;
+    }
+    
+    .status-label {
+      color: #888;
+      font-size: 13px;
+    }
+    
+    .status-value {
+      font-weight: 600;
+      font-size: 13px;
+    }
+    
+    .status-value.connected {
+      color: #00ff88;
+    }
+    
+    .status-value.disconnected {
+      color: #ff4444;
+    }
+    
+    .config-section {
+      margin-bottom: 16px;
+    }
+    
+    .config-section h3 {
+      font-size: 14px;
+      margin-bottom: 12px;
+      color: #ff3366;
+    }
+    
+    .input-group {
+      margin-bottom: 12px;
+    }
+    
+    .input-group label {
+      display: block;
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 4px;
+    }
+    
+    .input-group input {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: #fff;
+      font-size: 14px;
+    }
+    
+    .input-group input:focus {
+      outline: none;
+      border-color: #ff3366;
+    }
+    
+    .btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-bottom: 10px;
+    }
+    
+    .btn-primary {
+      background: linear-gradient(135deg, #ff3366 0%, #ff0844 100%);
+      color: #fff;
+    }
+    
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px rgba(255, 51, 102, 0.4);
+    }
+    
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+    
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    
+    .btn-success {
+      background: linear-gradient(135deg, #00ff88 0%, #00cc66 100%);
+      color: #000;
+    }
+    
+    .instructions {
+      background: rgba(255, 193, 7, 0.1);
+      border: 1px solid rgba(255, 193, 7, 0.3);
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    
+    .instructions h4 {
+      color: #ffc107;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+    
+    .instructions ol {
+      padding-left: 16px;
+      color: #ccc;
+    }
+    
+    .instructions li {
+      margin-bottom: 4px;
+    }
+    
+    .footer {
+      text-align: center;
+      padding: 12px;
+      font-size: 11px;
+      color: #666;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🤖 Blaze Auto Bet</h1>
+    <p>Sinais IA para Double</p>
+  </div>
+  
+  <div class="content">
+    <div class="status-card">
+      <div class="status-row">
+        <span class="status-label">Status da Extensão</span>
+        <span class="status-value" id="ext-status">Carregando...</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Página Blaze</span>
+        <span class="status-value" id="blaze-status">-</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Automação</span>
+        <span class="status-value" id="auto-status">Desligada</span>
+      </div>
+    </div>
+    
+    <div class="config-section">
+      <h3>⚙️ Configurações</h3>
+      <div class="input-group">
+        <label>Valor Base da Aposta (R$)</label>
+        <input type="number" id="bet-amount" value="2.5" min="0.1" step="0.1">
+      </div>
+      <div class="input-group">
+        <label>Máximo de Gales</label>
+        <input type="number" id="max-gales" value="2" min="0" max="5">
+      </div>
+    </div>
+    
+    <button class="btn btn-primary" id="save-config">💾 Salvar Configurações</button>
+    <button class="btn btn-secondary" id="open-blaze">🎰 Abrir Blaze</button>
+    
+    <div class="instructions">
+      <h4>📋 Como Usar:</h4>
+      <ol>
+        <li>Abra o site do Blaze e faça login</li>
+        <li>Vá para o jogo Double</li>
+        <li>Ative a automação no painel que aparece</li>
+        <li>Os sinais serão executados automaticamente!</li>
+      </ol>
+    </div>
+  </div>
+  
+  <div class="footer">
+    v1.0.0 • Desenvolvido com ❤️
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

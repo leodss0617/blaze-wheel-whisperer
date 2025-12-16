@@ -12,6 +12,7 @@ import { BrasiliaClockDisplay } from '@/components/BrasiliaClockDisplay';
 import { BetHistoryPanel } from '@/components/BetHistoryPanel';
 import { AutoBetPanel } from '@/components/AutoBetPanel';
 import { SettingsPanel } from '@/components/SettingsPanel';
+import { ExtensionPanel } from '@/components/ExtensionPanel';
 import { Flame, Brain, Activity, BarChart3, Wallet, Target, Download, Bot, Settings } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -278,6 +279,11 @@ const Index = () => {
                   currentPrediction={currentPrediction}
                   galeLevel={galeLevel}
                   lastRound={lastRound}
+                />
+                <ExtensionPanel
+                  currentPrediction={currentPrediction}
+                  betAmount={baseBet}
+                  galeLevel={galeLevel}
                 />
               </TabsContent>
 
