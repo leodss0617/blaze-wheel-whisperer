@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.ai-predict]
 verify_jwt = false
+
+[functions.blaze-auto-bet]
+verify_jwt = false
