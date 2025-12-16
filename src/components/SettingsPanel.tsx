@@ -273,7 +273,7 @@ export function SettingsPanel({
                 <div>
                   <span className="text-muted-foreground">Saldo:</span>
                   <span className="ml-1 font-medium text-blaze-gold">
-                    R$ {tokenInfo.balance?.toFixed(2) || '0.00'}
+                    R$ {(typeof tokenInfo.balance === 'number' ? tokenInfo.balance : 0).toFixed(2)}
                   </span>
                 </div>
                 <div className="col-span-2">
