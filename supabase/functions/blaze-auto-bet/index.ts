@@ -56,33 +56,74 @@ serve(async (req) => {
         const timeoutId = setTimeout(() => controller.abort(), 10000);
         
         try {
-          const balanceRes = await fetch('https://blaze.bet.br/api/users/me', {
+          // First try to get user data
+          const userRes = await fetch('https://blaze.bet.br/api/users/me', {
             method: 'GET',
             headers: baseHeaders,
             signal: controller.signal,
           });
-          clearTimeout(timeoutId);
           
-          if (!balanceRes.ok) {
-            const errorText = await balanceRes.text();
-            console.error('Balance check failed:', balanceRes.status, errorText);
+          if (!userRes.ok) {
+            clearTimeout(timeoutId);
+            const errorText = await userRes.text();
+            console.error('User check failed:', userRes.status, errorText);
             response = { 
               success: false, 
-              error: `Erro ao verificar saldo: ${balanceRes.status}` 
+              error: `Erro ao verificar usuário: ${userRes.status}` 
             };
-          } else {
-            const userData = await balanceRes.json();
-            console.log('User data received:', JSON.stringify(userData).substring(0, 200));
-            response = { 
-              success: true, 
-              balance: userData.wallet?.balance || userData.balance || 0,
-              data: {
-                username: userData.username,
-                email: userData.email,
-                balance: userData.wallet?.balance || userData.balance || 0,
-              }
-            };
+            break;
           }
+          
+          const userData = await userRes.json();
+          console.log('User keys:', Object.keys(userData).join(', '));
+          
+          // Try to get wallet data separately
+          const walletRes = await fetch('https://blaze.bet.br/api/wallets', {
+            method: 'GET',
+            headers: baseHeaders,
+            signal: controller.signal,
+          });
+          
+          let balance = 0;
+          let walletData = null;
+          
+          if (walletRes.ok) {
+            walletData = await walletRes.json();
+            console.log('Wallet response:', JSON.stringify(walletData).substring(0, 500));
+            
+            // Parse wallet data
+            if (Array.isArray(walletData) && walletData.length > 0) {
+              // Find the main wallet (usually BRL)
+              const brlWallet = walletData.find((w: any) => w.currency === 'BRL') || walletData[0];
+              balance = brlWallet?.balance || 0;
+              console.log('Balance from wallets array:', balance);
+            } else if (walletData && typeof walletData.balance === 'number') {
+              balance = walletData.balance;
+              console.log('Balance from wallet object:', balance);
+            }
+          } else {
+            console.log('Wallet endpoint failed, trying user data...');
+            // Fallback to user data
+            if (userData.wallet?.balance !== undefined) {
+              balance = userData.wallet.balance;
+            } else if (userData.balance !== undefined) {
+              balance = userData.balance;
+            }
+          }
+          
+          clearTimeout(timeoutId);
+          console.log('Final balance:', balance);
+          
+          response = { 
+            success: true, 
+            balance,
+            data: {
+              username: userData.username,
+              email: userData.email,
+              balance,
+              walletData,
+            }
+          };
         } catch (fetchError) {
           clearTimeout(timeoutId);
           console.error('Fetch error:', fetchError);
