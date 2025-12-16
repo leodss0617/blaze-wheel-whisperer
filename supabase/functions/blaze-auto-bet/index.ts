@@ -91,15 +91,17 @@ serve(async (req) => {
             walletData = await walletRes.json();
             console.log('Wallet response:', JSON.stringify(walletData).substring(0, 500));
             
-            // Parse wallet data
+            // Parse wallet data - balance comes as STRING, currency is currency_type
             if (Array.isArray(walletData) && walletData.length > 0) {
-              // Find the main wallet (usually BRL)
-              const brlWallet = walletData.find((w: any) => w.currency === 'BRL') || walletData[0];
-              balance = brlWallet?.balance || 0;
-              console.log('Balance from wallets array:', balance);
-            } else if (walletData && typeof walletData.balance === 'number') {
-              balance = walletData.balance;
-              console.log('Balance from wallet object:', balance);
+              // Find the main wallet (BRL) - field is currency_type not currency
+              const brlWallet = walletData.find((w: any) => w.currency_type === 'BRL' || w.primary === true) || walletData[0];
+              // Balance is a STRING, need to parse it
+              const balanceStr = brlWallet?.real_balance || brlWallet?.balance || '0';
+              balance = parseFloat(balanceStr) || 0;
+              console.log('Balance from wallets array (parsed):', balance);
+            } else if (walletData && (walletData.balance !== undefined)) {
+              balance = parseFloat(walletData.balance) || 0;
+              console.log('Balance from wallet object (parsed):', balance);
             }
           } else {
             console.log('Wallet endpoint failed, trying user data...');
