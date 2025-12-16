@@ -11,7 +11,8 @@ import { BankrollManager } from '@/components/BankrollManager';
 import { BrasiliaClockDisplay } from '@/components/BrasiliaClockDisplay';
 import { BetHistoryPanel } from '@/components/BetHistoryPanel';
 import { AutoBetPanel } from '@/components/AutoBetPanel';
-import { Flame, Brain, Activity, BarChart3, Wallet, Target, Download, Bot } from 'lucide-react';
+import { SettingsPanel } from '@/components/SettingsPanel';
+import { Flame, Brain, Activity, BarChart3, Wallet, Target, Download, Bot, Settings } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -213,13 +214,14 @@ const Index = () => {
           {/* Mobile Layout with Tabs */}
           <div className="lg:hidden">
             <Tabs defaultValue="live" className="w-full">
-              <TabsList className="w-full grid grid-cols-6 mb-4 bg-card/50">
-                <TabsTrigger value="live" className="text-xs px-1">Live</TabsTrigger>
-                <TabsTrigger value="signals" className="text-xs px-1">Sinais</TabsTrigger>
-                <TabsTrigger value="history" className="text-xs px-1">Apostas</TabsTrigger>
-                <TabsTrigger value="ai" className="text-xs px-1">IA</TabsTrigger>
-                <TabsTrigger value="bank" className="text-xs px-1">Banca</TabsTrigger>
-                <TabsTrigger value="auto" className="text-xs px-1">Auto</TabsTrigger>
+              <TabsList className="w-full grid grid-cols-7 mb-4 bg-card/50">
+                <TabsTrigger value="live" className="text-[10px] px-0.5">Live</TabsTrigger>
+                <TabsTrigger value="signals" className="text-[10px] px-0.5">Sinais</TabsTrigger>
+                <TabsTrigger value="history" className="text-[10px] px-0.5">Apostas</TabsTrigger>
+                <TabsTrigger value="ai" className="text-[10px] px-0.5">IA</TabsTrigger>
+                <TabsTrigger value="bank" className="text-[10px] px-0.5">Banca</TabsTrigger>
+                <TabsTrigger value="auto" className="text-[10px] px-0.5">Auto</TabsTrigger>
+                <TabsTrigger value="settings" className="text-[10px] px-0.5">Config</TabsTrigger>
               </TabsList>
 
               <TabsContent value="live" className="space-y-4 mt-0">
@@ -278,6 +280,17 @@ const Index = () => {
                   lastRound={lastRound}
                 />
               </TabsContent>
+
+              <TabsContent value="settings" className="space-y-4 mt-0">
+                <SettingsPanel
+                  predictionInterval={predictionInterval}
+                  onIntervalChange={setPredictionInterval}
+                  baseBet={baseBet}
+                  setBaseBet={setBaseBet}
+                  useAI={useAI}
+                  setUseAI={setUseAI}
+                />
+              </TabsContent>
             </Tabs>
           </div>
 
@@ -302,36 +315,60 @@ const Index = () => {
               <PatternChart rounds={rounds} />
             </div>
 
-            {/* Right Column - AI, Bankroll & Auto-Bet */}
+            {/* Right Column - AI, Bankroll, Auto-Bet & Settings */}
             <div className="lg:col-span-4 space-y-6">
-              <AIPanel
-                prediction={aiPrediction}
-                stats={aiStats}
-                isLoading={isAILoading}
-                useAI={useAI}
-                onToggleAI={setUseAI}
-                consecutiveLosses={consecutiveLosses}
-                isRecalibrating={isRecalibrating}
-                predictionInterval={predictionInterval}
-                onIntervalChange={setPredictionInterval}
-              />
-              <AutoBetPanel
-                predictionState={predictionState}
-                currentPrediction={currentPrediction}
-                galeLevel={galeLevel}
-                lastRound={lastRound}
-              />
-              <BankrollManager 
-                predictionState={predictionState}
-                currentPrediction={currentPrediction}
-                galeLevel={galeLevel}
-                lastRound={lastRound}
-                baseBet={baseBet}
-                setBaseBet={setBaseBet}
-                totalProfit={totalProfit}
-                resetProfit={resetProfit}
-              />
-              <StatsPanel stats={stats} />
+              <Tabs defaultValue="control" className="w-full">
+                <TabsList className="w-full grid grid-cols-3 mb-4 bg-card/50">
+                  <TabsTrigger value="control" className="text-xs">Controle</TabsTrigger>
+                  <TabsTrigger value="auto" className="text-xs">Automação</TabsTrigger>
+                  <TabsTrigger value="settings" className="text-xs">Config</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="control" className="space-y-6 mt-0">
+                  <AIPanel
+                    prediction={aiPrediction}
+                    stats={aiStats}
+                    isLoading={isAILoading}
+                    useAI={useAI}
+                    onToggleAI={setUseAI}
+                    consecutiveLosses={consecutiveLosses}
+                    isRecalibrating={isRecalibrating}
+                    predictionInterval={predictionInterval}
+                    onIntervalChange={setPredictionInterval}
+                  />
+                  <BankrollManager 
+                    predictionState={predictionState}
+                    currentPrediction={currentPrediction}
+                    galeLevel={galeLevel}
+                    lastRound={lastRound}
+                    baseBet={baseBet}
+                    setBaseBet={setBaseBet}
+                    totalProfit={totalProfit}
+                    resetProfit={resetProfit}
+                  />
+                  <StatsPanel stats={stats} />
+                </TabsContent>
+
+                <TabsContent value="auto" className="space-y-6 mt-0">
+                  <AutoBetPanel
+                    predictionState={predictionState}
+                    currentPrediction={currentPrediction}
+                    galeLevel={galeLevel}
+                    lastRound={lastRound}
+                  />
+                </TabsContent>
+
+                <TabsContent value="settings" className="mt-0">
+                  <SettingsPanel
+                    predictionInterval={predictionInterval}
+                    onIntervalChange={setPredictionInterval}
+                    baseBet={baseBet}
+                    setBaseBet={setBaseBet}
+                    useAI={useAI}
+                    setUseAI={setUseAI}
+                  />
+                </TabsContent>
+              </Tabs>
             </div>
           </div>
         </div>
