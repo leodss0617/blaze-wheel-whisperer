@@ -14,10 +14,12 @@ import {
   AlertTriangle,
   Trash2,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  BarChart3
 } from 'lucide-react';
 import { useBankrollGoal, type BankrollGoal } from '@/hooks/useBankrollGoal';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { BankrollProgressChart } from './BankrollProgressChart';
 
 interface BankrollGoalManagerProps {
   currentProfit: number;
@@ -25,7 +27,8 @@ interface BankrollGoalManagerProps {
 }
 
 export function BankrollGoalManager({ currentProfit, currentBankroll }: BankrollGoalManagerProps) {
-  const { goal, setNewGoal, clearGoal, getTodayProgress, isGoalAchievable } = useBankrollGoal(currentProfit);
+  const { goal, dailyProgress, setNewGoal, clearGoal, getTodayProgress, isGoalAchievable } = useBankrollGoal(currentProfit);
+  const [showChart, setShowChart] = useState(false);
   const [isSettingGoal, setIsSettingGoal] = useState(!goal);
   const [isExpanded, setIsExpanded] = useState(true);
   
@@ -239,6 +242,25 @@ export function BankrollGoalManager({ currentProfit, currentBankroll }: Bankroll
                       Meta pode estar difícil de atingir no prazo
                     </span>
                   </div>
+                )}
+
+                {/* Chart Toggle */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs"
+                  onClick={() => setShowChart(!showChart)}
+                >
+                  <BarChart3 className="h-3 w-3 mr-1" />
+                  {showChart ? 'Ocultar Gráfico' : 'Ver Gráfico de Progresso'}
+                </Button>
+
+                {showChart && (
+                  <BankrollProgressChart 
+                    goal={goal} 
+                    dailyProgress={dailyProgress}
+                    currentProfit={currentProfit}
+                  />
                 )}
 
                 {/* Actions */}
