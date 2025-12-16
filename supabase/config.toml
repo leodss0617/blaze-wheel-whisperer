@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.blaze-auto-bet]
 verify_jwt = false
+
+[functions.white-protection-ai]
+verify_jwt = false

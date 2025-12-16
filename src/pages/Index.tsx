@@ -1,4 +1,5 @@
 import { useBlazeData } from '@/hooks/useBlazeData';
+import { useWhiteProtectionAI } from '@/hooks/useWhiteProtectionAI';
 import { ConnectionPanel } from '@/components/ConnectionPanel';
 import { LiveWheel } from '@/components/LiveWheel';
 import { HistoryPanel } from '@/components/HistoryPanel';
@@ -8,11 +9,13 @@ import { PatternChart } from '@/components/PatternChart';
 import { AIPanel } from '@/components/AIPanel';
 import { CountdownTimer } from '@/components/CountdownTimer';
 import { BankrollManager } from '@/components/BankrollManager';
+import { BankrollGoalManager } from '@/components/BankrollGoalManager';
+import { WhiteProtectionPanel } from '@/components/WhiteProtectionPanel';
 import { BrasiliaClockDisplay } from '@/components/BrasiliaClockDisplay';
 import { BetHistoryPanel } from '@/components/BetHistoryPanel';
 import { AutoBetPanel } from '@/components/AutoBetPanel';
 import { SettingsPanel } from '@/components/SettingsPanel';
-import { ExtensionPanel } from '@/components/ExtensionPanel'; // Updated type
+import { ExtensionPanel } from '@/components/ExtensionPanel';
 import { Flame, Brain, Activity, BarChart3, Wallet, Target, Download, Bot, Settings } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -49,6 +52,21 @@ const Index = () => {
     resetProfit,
   } = useBlazeData();
 
+  // White Protection AI
+  const {
+    currentProtection,
+    whiteStats,
+    isAnalyzing: isWhiteAnalyzing,
+    analyzeWhiteProtection,
+  } = useWhiteProtectionAI();
+
+  // Analyze white protection when rounds change
+  useEffect(() => {
+    if (rounds.length >= 20 && connectionStatus === 'connected') {
+      analyzeWhiteProtection(rounds, baseBet);
+    }
+  }, [rounds, baseBet, connectionStatus, analyzeWhiteProtection]);
+
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const navigate = useNavigate();
 
@@ -64,6 +82,10 @@ const Index = () => {
   const losses = signals.filter(s => s.status === 'loss').length;
   const total = wins + losses;
   const winRate = total > 0 ? (wins / total) * 100 : 0;
+
+  // Current bankroll for goal manager
+  const initialBankroll = parseFloat(localStorage.getItem('blaze-initial-bankroll') || '0');
+  const currentBankroll = initialBankroll + totalProfit;
 
   return (
     <div className="min-h-screen bg-background relative overflow-x-hidden">
@@ -239,6 +261,13 @@ const Index = () => {
                   currentPrediction={currentPrediction}
                   roundsUntilNextPrediction={roundsUntilNextPrediction}
                 />
+                {/* White Protection Panel - shows alongside predictions */}
+                <WhiteProtectionPanel
+                  protection={currentProtection}
+                  whiteStats={whiteStats}
+                  isAnalyzing={isWhiteAnalyzing}
+                  currentBetAmount={baseBet}
+                />
                 <StatsPanel stats={stats} />
               </TabsContent>
 
@@ -270,6 +299,11 @@ const Index = () => {
                   setBaseBet={setBaseBet}
                   totalProfit={totalProfit}
                   resetProfit={resetProfit}
+                />
+                {/* Goal Manager - integrated with bankroll */}
+                <BankrollGoalManager
+                  currentProfit={totalProfit}
+                  currentBankroll={currentBankroll}
                 />
               </TabsContent>
 
@@ -317,6 +351,13 @@ const Index = () => {
                 currentPrediction={currentPrediction}
                 roundsUntilNextPrediction={roundsUntilNextPrediction}
               />
+              {/* White Protection Panel - shows alongside main prediction */}
+              <WhiteProtectionPanel
+                protection={currentProtection}
+                whiteStats={whiteStats}
+                isAnalyzing={isWhiteAnalyzing}
+                currentBetAmount={baseBet}
+              />
               <BetHistoryPanel signals={signals} />
               <PatternChart rounds={rounds} />
             </div>
@@ -352,6 +393,11 @@ const Index = () => {
                     totalProfit={totalProfit}
                     resetProfit={resetProfit}
                   />
+                  {/* Goal Manager - integrated with bankroll */}
+                  <BankrollGoalManager
+                    currentProfit={totalProfit}
+                    currentBankroll={currentBankroll}
+                  />
                   <StatsPanel stats={stats} />
                 </TabsContent>
 
@@ -361,6 +407,11 @@ const Index = () => {
                     currentPrediction={currentPrediction}
                     galeLevel={galeLevel}
                     lastRound={lastRound}
+                  />
+                  <ExtensionPanel
+                    currentPrediction={currentPrediction}
+                    betAmount={baseBet}
+                    galeLevel={galeLevel}
                   />
                 </TabsContent>
 
