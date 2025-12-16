@@ -48,7 +48,7 @@ serve(async (req) => {
       'Referer': 'https://blaze.bet.br/',
     };
 
-    let response: BlazeResponse;
+    let response: BlazeResponse = { success: false, error: 'Ação não processada' };
 
     switch (body.action) {
       case 'check_balance': {
@@ -178,50 +178,54 @@ serve(async (req) => {
         const timeoutId = setTimeout(() => controller.abort(), 20000);
         
         try {
-          // First get wallet ID
-          const walletRes = await fetch('https://blaze.bet.br/api/wallets', {
-            method: 'GET',
-            headers: baseHeaders,
-            signal: controller.signal,
-          });
+          // Try multiple domain/endpoint combinations
+          const domains = [
+            'https://blaze.bet.br',
+            'https://blaze.com',
+            'https://blaze1.space'
+          ];
           
-          let walletId = null;
-          if (walletRes.ok) {
-            const walletData = await walletRes.json();
-            if (Array.isArray(walletData) && walletData.length > 0) {
-              const brlWallet = walletData.find((w: any) => w.currency_type === 'BRL' || w.primary === true) || walletData[0];
-              walletId = brlWallet?.id;
-              console.log('Wallet ID:', walletId);
+          let gameId = null;
+          let gameStatus = null;
+          let successDomain = null;
+          
+          // Find working domain for current game
+          for (const domain of domains) {
+            try {
+              // Try both endpoint patterns
+              const endpoints = [
+                `${domain}/api/roulette_games/current`,
+                `${domain}/api/singleplayer-originals/originals/roulette_games/current/1`
+              ];
+              
+              for (const endpoint of endpoints) {
+                const res = await fetch(endpoint, {
+                  method: 'GET',
+                  headers: baseHeaders,
+                  signal: controller.signal,
+                });
+                
+                if (res.ok) {
+                  const data = await res.json();
+                  if (data.id && data.status) {
+                    gameId = data.id;
+                    gameStatus = data.status;
+                    successDomain = domain;
+                    console.log(`Found game at ${endpoint}:`, gameId, gameStatus);
+                    break;
+                  }
+                }
+              }
+              
+              if (gameId) break;
+            } catch (e) {
+              console.log(`Domain ${domain} failed:`, e);
             }
           }
           
-          // Get current game
-          const currentGameRes = await fetch('https://blaze.bet.br/api/singleplayer-originals/originals/roulette_games/current/1', {
-            method: 'GET',
-            headers: baseHeaders,
-            signal: controller.signal,
-          });
-          
-          if (!currentGameRes.ok) {
-            clearTimeout(timeoutId);
-            const errorText = await currentGameRes.text();
-            console.error('Failed to get current game:', currentGameRes.status, errorText);
-            response = { success: false, error: `Não foi possível obter jogo atual: ${currentGameRes.status}` };
-            break;
-          }
-          
-          const currentGame = await currentGameRes.json();
-          console.log('Current game:', JSON.stringify(currentGame).substring(0, 400));
-          
-          const gameId = currentGame.id;
-          const gameStatus = currentGame.status;
-          const roomId = currentGame.room_id || 4;
-          
-          console.log(`Game ID: ${gameId}, Status: ${gameStatus}, Room: ${roomId}`);
-          
           if (!gameId) {
             clearTimeout(timeoutId);
-            response = { success: false, error: 'Não foi possível obter ID do jogo' };
+            response = { success: false, error: 'Não foi possível encontrar jogo atual em nenhum domínio' };
             break;
           }
           
@@ -237,56 +241,84 @@ serve(async (req) => {
             break;
           }
           
-          // Try bet with game_id (most common format)
-          const betPayload = {
-            amount: parseFloat(String(body.amount)),
-            color: colorCode,
-            game_id: gameId,
-            wallet_id: walletId,
-            free_bet: false,
-          };
+          // Try different bet payloads
+          const betPayloads = [
+            // Simple payload
+            { amount: body.amount, color: colorCode },
+            // With game_id
+            { amount: body.amount, color: colorCode, game_id: gameId },
+            // With free_bet
+            { amount: body.amount, color: colorCode, game_id: gameId, free_bet: false },
+            // String amount
+            { amount: String(body.amount), color: colorCode, game_id: gameId },
+          ];
           
-          console.log('Bet payload:', JSON.stringify(betPayload));
+          const betEndpoints = [
+            `${successDomain}/api/roulette_bets`,
+            `${successDomain}/api/singleplayer-originals/originals/roulette_bets`,
+          ];
           
-          const betRes = await fetch('https://blaze.bet.br/api/singleplayer-originals/originals/roulette_bets', {
-            method: 'POST',
-            headers: baseHeaders,
-            body: JSON.stringify(betPayload),
-            signal: controller.signal,
-          });
+          let betSuccess = false;
+          let lastError = '';
           
-          const betResponseText = await betRes.text();
-          clearTimeout(timeoutId);
-          console.log('Bet response:', betRes.status, betResponseText.substring(0, 500));
-          
-          if (betRes.ok) {
-            let betData;
-            try {
-              betData = JSON.parse(betResponseText);
-            } catch {
-              betData = { raw: betResponseText };
-            }
-            console.log('Bet placed successfully:', betData);
-            response = { 
-              success: true, 
-              data: {
-                bet_id: betData.id || 'placed',
-                amount: body.amount,
-                color: body.color,
-                game_id: gameId,
+          for (const betEndpoint of betEndpoints) {
+            for (const payload of betPayloads) {
+              console.log(`Trying ${betEndpoint} with:`, JSON.stringify(payload));
+              
+              try {
+                const betRes = await fetch(betEndpoint, {
+                  method: 'POST',
+                  headers: baseHeaders,
+                  body: JSON.stringify(payload),
+                });
+                
+                const betText = await betRes.text();
+                console.log(`Response ${betRes.status}:`, betText.substring(0, 300));
+                
+                if (betRes.ok || betRes.status === 201) {
+                  let betData;
+                  try {
+                    betData = JSON.parse(betText);
+                  } catch {
+                    betData = { raw: betText };
+                  }
+                  
+                  console.log('BET SUCCESS!', betData);
+                  betSuccess = true;
+                  clearTimeout(timeoutId);
+                  response = { 
+                    success: true, 
+                    data: {
+                      bet_id: betData.id || 'placed',
+                      amount: body.amount,
+                      color: body.color,
+                      game_id: gameId,
+                    }
+                  };
+                  break;
+                } else {
+                  lastError = betText;
+                }
+              } catch (e) {
+                console.log(`Bet request failed:`, e);
+                lastError = String(e);
               }
-            };
-          } else {
-            console.error('Bet failed:', betRes.status, betResponseText);
+            }
+            
+            if (betSuccess) break;
+          }
+          
+          if (!betSuccess) {
+            clearTimeout(timeoutId);
             response = { 
               success: false, 
-              error: `Erro ao apostar: ${betRes.status} - ${betResponseText.substring(0, 200)}` 
+              error: `Todas as tentativas falharam. Último erro: ${lastError.substring(0, 200)}` 
             };
           }
         } catch (fetchError) {
           clearTimeout(timeoutId);
           console.error('Bet error:', fetchError);
-          response = { success: false, error: `Erro de conexão ao apostar: ${fetchError}` };
+          response = { success: false, error: `Erro de conexão: ${fetchError}` };
         }
         break;
       }
