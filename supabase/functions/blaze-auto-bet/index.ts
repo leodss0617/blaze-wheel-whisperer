@@ -175,62 +175,59 @@ serve(async (req) => {
         console.log(`Placing bet: R$ ${body.amount} on ${body.color} (code: ${colorCode})`);
         
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 20000);
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
         
         try {
-          // Try multiple domain/endpoint combinations
-          const domains = [
-            'https://blaze.bet.br',
-            'https://blaze.com',
-            'https://blaze1.space'
-          ];
-          
+          // First, get wallet info to get wallet_id
+          let walletId = null;
+          try {
+            const walletRes = await fetch('https://blaze.bet.br/api/wallets', {
+              method: 'GET',
+              headers: baseHeaders,
+              signal: controller.signal,
+            });
+            
+            if (walletRes.ok) {
+              const walletData = await walletRes.json();
+              console.log('Wallet data for bet:', JSON.stringify(walletData).substring(0, 300));
+              
+              if (Array.isArray(walletData) && walletData.length > 0) {
+                // Find BRL wallet
+                const brlWallet = walletData.find((w: any) => w.currency_type === 'BRL' || w.primary === true) || walletData[0];
+                walletId = brlWallet?.id;
+                console.log('Using wallet_id:', walletId);
+              }
+            }
+          } catch (e) {
+            console.log('Failed to get wallet:', e);
+          }
+
+          // Get current game
           let gameId = null;
           let gameStatus = null;
-          let successDomain = null;
           
-          // Find working domain for current game
-          for (const domain of domains) {
-            try {
-              // Try both endpoint patterns
-              const endpoints = [
-                `${domain}/api/roulette_games/current`,
-                `${domain}/api/singleplayer-originals/originals/roulette_games/current/1`
-              ];
-              
-              for (const endpoint of endpoints) {
-                const res = await fetch(endpoint, {
-                  method: 'GET',
-                  headers: baseHeaders,
-                  signal: controller.signal,
-                });
-                
-                if (res.ok) {
-                  const data = await res.json();
-                  if (data.id && data.status) {
-                    gameId = data.id;
-                    gameStatus = data.status;
-                    successDomain = domain;
-                    console.log(`Found game at ${endpoint}:`, gameId, gameStatus);
-                    break;
-                  }
-                }
-              }
-              
-              if (gameId) break;
-            } catch (e) {
-              console.log(`Domain ${domain} failed:`, e);
-            }
+          const gameRes = await fetch('https://blaze.bet.br/api/singleplayer-originals/originals/roulette_games/current/1', {
+            method: 'GET',
+            headers: baseHeaders,
+            signal: controller.signal,
+          });
+          
+          if (gameRes.ok) {
+            const data = await gameRes.json();
+            gameId = data.id;
+            gameStatus = data.status;
+            console.log(`Current game: ${gameId}, status: ${gameStatus}`);
           }
           
           if (!gameId) {
             clearTimeout(timeoutId);
-            response = { success: false, error: 'Não foi possível encontrar jogo atual em nenhum domínio' };
+            response = { success: false, error: 'Não foi possível encontrar jogo atual' };
             break;
           }
           
           // Check if betting is open
-          if (gameStatus !== 'waiting') {
+          const validStatuses = ['waiting', 'bet', 'betting', 'open', 'graphing'];
+          if (!validStatuses.includes(gameStatus)) {
             clearTimeout(timeoutId);
             console.log(`Betting closed. Status: ${gameStatus}`);
             response = { 
@@ -241,21 +238,20 @@ serve(async (req) => {
             break;
           }
           
-          // Try different bet payloads
+          // Try different bet payloads with wallet_id
           const betPayloads = [
-            // Simple payload
-            { amount: body.amount, color: colorCode },
-            // With game_id
+            // With wallet_id (most likely correct)
+            { amount: body.amount, color: colorCode, wallet_id: walletId, currency_type: 'BRL' },
+            { amount: body.amount, color: colorCode, game_id: gameId, wallet_id: walletId },
+            { amount: body.amount, color: colorCode, game_id: gameId, wallet_id: walletId, currency_type: 'BRL' },
+            { amount: String(body.amount), color: colorCode, game_id: gameId, wallet_id: walletId },
+            // Without wallet_id as fallback
             { amount: body.amount, color: colorCode, game_id: gameId },
-            // With free_bet
-            { amount: body.amount, color: colorCode, game_id: gameId, free_bet: false },
-            // String amount
-            { amount: String(body.amount), color: colorCode, game_id: gameId },
+            { amount: body.amount, color: colorCode },
           ];
           
           const betEndpoints = [
-            `${successDomain}/api/roulette_bets`,
-            `${successDomain}/api/singleplayer-originals/originals/roulette_bets`,
+            'https://blaze.bet.br/api/singleplayer-originals/originals/roulette_bets',
           ];
           
           let betSuccess = false;
@@ -263,45 +259,91 @@ serve(async (req) => {
           
           for (const betEndpoint of betEndpoints) {
             for (const payload of betPayloads) {
-              console.log(`Trying ${betEndpoint} with:`, JSON.stringify(payload));
-              
-              try {
-                const betRes = await fetch(betEndpoint, {
-                  method: 'POST',
-                  headers: baseHeaders,
-                  body: JSON.stringify(payload),
-                });
+              // Skip payloads with null wallet_id
+              if (payload.wallet_id === null) {
+                const cleanPayload = { ...payload };
+                delete cleanPayload.wallet_id;
+                console.log(`Trying ${betEndpoint} with:`, JSON.stringify(cleanPayload));
                 
-                const betText = await betRes.text();
-                console.log(`Response ${betRes.status}:`, betText.substring(0, 300));
-                
-                if (betRes.ok || betRes.status === 201) {
-                  let betData;
-                  try {
-                    betData = JSON.parse(betText);
-                  } catch {
-                    betData = { raw: betText };
-                  }
+                try {
+                  const betRes = await fetch(betEndpoint, {
+                    method: 'POST',
+                    headers: baseHeaders,
+                    body: JSON.stringify(cleanPayload),
+                  });
                   
-                  console.log('BET SUCCESS!', betData);
-                  betSuccess = true;
-                  clearTimeout(timeoutId);
-                  response = { 
-                    success: true, 
-                    data: {
-                      bet_id: betData.id || 'placed',
-                      amount: body.amount,
-                      color: body.color,
-                      game_id: gameId,
+                  const betText = await betRes.text();
+                  console.log(`Response ${betRes.status}:`, betText.substring(0, 300));
+                  
+                  if (betRes.ok || betRes.status === 201) {
+                    let betData;
+                    try {
+                      betData = JSON.parse(betText);
+                    } catch {
+                      betData = { raw: betText };
                     }
-                  };
-                  break;
-                } else {
-                  lastError = betText;
+                    
+                    console.log('BET SUCCESS!', betData);
+                    betSuccess = true;
+                    clearTimeout(timeoutId);
+                    response = { 
+                      success: true, 
+                      data: {
+                        bet_id: betData.id || 'placed',
+                        amount: body.amount,
+                        color: body.color,
+                        game_id: gameId,
+                      }
+                    };
+                    break;
+                  } else {
+                    lastError = betText;
+                  }
+                } catch (e) {
+                  console.log(`Bet request failed:`, e);
+                  lastError = String(e);
                 }
-              } catch (e) {
-                console.log(`Bet request failed:`, e);
-                lastError = String(e);
+              } else {
+                console.log(`Trying ${betEndpoint} with:`, JSON.stringify(payload));
+                
+                try {
+                  const betRes = await fetch(betEndpoint, {
+                    method: 'POST',
+                    headers: baseHeaders,
+                    body: JSON.stringify(payload),
+                  });
+                  
+                  const betText = await betRes.text();
+                  console.log(`Response ${betRes.status}:`, betText.substring(0, 300));
+                  
+                  if (betRes.ok || betRes.status === 201) {
+                    let betData;
+                    try {
+                      betData = JSON.parse(betText);
+                    } catch {
+                      betData = { raw: betText };
+                    }
+                    
+                    console.log('BET SUCCESS!', betData);
+                    betSuccess = true;
+                    clearTimeout(timeoutId);
+                    response = { 
+                      success: true, 
+                      data: {
+                        bet_id: betData.id || 'placed',
+                        amount: body.amount,
+                        color: body.color,
+                        game_id: gameId,
+                      }
+                    };
+                    break;
+                  } else {
+                    lastError = betText;
+                  }
+                } catch (e) {
+                  console.log(`Bet request failed:`, e);
+                  lastError = String(e);
+                }
               }
             }
             
