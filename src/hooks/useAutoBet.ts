@@ -34,7 +34,15 @@ export function useAutoBet() {
 
   const [stats, setStats] = useState<AutoBetStats>(() => {
     const saved = localStorage.getItem('autobet-stats');
-    return saved ? JSON.parse(saved) : {
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Ensure balance is always a number
+      return {
+        ...parsed,
+        balance: typeof parsed.balance === 'number' ? parsed.balance : 0,
+      };
+    }
+    return {
       totalBets: 0,
       wins: 0,
       losses: 0,
