@@ -327,6 +327,192 @@
     return Math.floor(seconds) + 's';
   }
 
+  // ============= MUTATION OBSERVER =============
+  
+  let blazeObserver = null;
+  let lastDetectedPhase = null;
+  let lastDetectedResult = null;
+  let observerDebounceTimer = null;
+  
+  function startBlazeObserver() {
+    log('🔭 Iniciando MutationObserver...');
+    
+    // Parar observer anterior se existir
+    stopBlazeObserver();
+    
+    // Encontrar container principal do jogo
+    const gameContainer = findGameContainer();
+    
+    if (!gameContainer) {
+      warn('Container do jogo não encontrado, observando body...');
+    }
+    
+    const targetNode = gameContainer || document.body;
+    
+    // Configuração do observer
+    const observerConfig = {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['class', 'style', 'data-status', 'disabled']
+    };
+    
+    // Criar observer
+    blazeObserver = new MutationObserver((mutations) => {
+      if (observerDebounceTimer) clearTimeout(observerDebounceTimer);
+      observerDebounceTimer = setTimeout(() => processMutations(mutations), 50);
+    });
+    
+    blazeObserver.observe(targetNode, observerConfig);
+    log('✅ MutationObserver ativo em:', targetNode.className || targetNode.tagName);
+    addLog('🔭 Observer DOM ativo');
+  }
+  
+  function stopBlazeObserver() {
+    if (blazeObserver) {
+      blazeObserver.disconnect();
+      blazeObserver = null;
+    }
+    if (observerDebounceTimer) {
+      clearTimeout(observerDebounceTimer);
+      observerDebounceTimer = null;
+    }
+  }
+  
+  function findGameContainer() {
+    const selectors = [
+      '.double-container', '.game-double', '[class*="double-game"]',
+      '.roulette-container', '[class*="roulette"]', '.game-container',
+      '[class*="game-content"]', 'main', '#game', '#double'
+    ];
+    
+    for (const selector of selectors) {
+      const container = document.querySelector(selector);
+      if (container) return container;
+    }
+    return null;
+  }
+  
+  function processMutations(mutations) {
+    let hasRelevantChanges = false;
+    
+    for (const mutation of mutations) {
+      if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+        const classes = mutation.target.className?.toLowerCase() || '';
+        
+        if (classes.includes('rolling') || classes.includes('spinning') || classes.includes('girando')) {
+          if (lastDetectedPhase !== 'rolling') {
+            lastDetectedPhase = 'rolling';
+            onPhaseChange('rolling');
+          }
+        } else if (classes.includes('waiting') || classes.includes('betting') || classes.includes('open')) {
+          if (lastDetectedPhase !== 'betting') {
+            lastDetectedPhase = 'betting';
+            onPhaseChange('betting');
+          }
+        } else if (classes.includes('complete') || classes.includes('result') || classes.includes('finished')) {
+          if (lastDetectedPhase !== 'complete') {
+            lastDetectedPhase = 'complete';
+            onPhaseChange('complete');
+          }
+        }
+        hasRelevantChanges = true;
+      }
+      
+      if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+        for (const node of mutation.addedNodes) {
+          if (node.nodeType !== Node.ELEMENT_NODE) continue;
+          
+          const classes = node.className?.toLowerCase() || '';
+          
+          if (classes.includes('result') || classes.includes('winner') || 
+              classes.includes('last-') || classes.includes('history')) {
+            const result = detectResultFromElement(node);
+            if (result && JSON.stringify(result) !== JSON.stringify(lastDetectedResult)) {
+              lastDetectedResult = result;
+              onNewResult(result);
+            }
+          }
+          
+          if (classes.includes('red') || classes.includes('black') || classes.includes('white')) {
+            const result = detectResultFromElement(node);
+            if (result) onNewResult(result);
+          }
+        }
+        hasRelevantChanges = true;
+      }
+    }
+    
+    if (hasRelevantChanges) updateTimerDisplay();
+  }
+  
+  function onPhaseChange(phase) {
+    log(`🔄 Fase: ${phase}`);
+    
+    switch (phase) {
+      case 'betting':
+        addLog('🟢 Apostas abertas!');
+        if (isWaitingToBet && currentColor) {
+          placeBet(currentColor, currentBetAmount);
+        }
+        break;
+      case 'rolling':
+        addLog('🎰 Girando...');
+        break;
+      case 'complete':
+        addLog('✅ Resultado!');
+        break;
+    }
+  }
+  
+  function onNewResult(result) {
+    log(`🎯 Resultado:`, result);
+    addLog(`🎯 ${result.color?.toUpperCase() || '?'} ${result.number !== null ? `(${result.number})` : ''}`);
+    
+    try {
+      chrome.runtime.sendMessage({ type: 'NEW_RESULT', data: result });
+    } catch (e) {}
+    
+    try {
+      const key = 'blaze-latest-results';
+      const existing = JSON.parse(localStorage.getItem(key) || '[]');
+      existing.unshift({ ...result, timestamp: Date.now() });
+      localStorage.setItem(key, JSON.stringify(existing.slice(0, 20)));
+    } catch (e) {}
+  }
+  
+  function detectResultFromElement(element) {
+    if (!element) return null;
+    
+    const result = { color: null, number: null, timestamp: Date.now() };
+    const classes = element.className?.toLowerCase() || '';
+    const text = element.textContent?.trim() || '';
+    const bgColor = window.getComputedStyle(element).backgroundColor;
+    
+    if (classes.includes('red') || classes.includes('vermelho')) result.color = 'red';
+    else if (classes.includes('black') || classes.includes('preto')) result.color = 'black';
+    else if (classes.includes('white') || classes.includes('branco')) result.color = 'white';
+    
+    if (!result.color) {
+      const normalized = normalizeColor(bgColor);
+      if (['red', 'black', 'white'].includes(normalized)) result.color = normalized;
+    }
+    
+    const numMatch = text.match(/\b(\d{1,2})\b/);
+    if (numMatch) {
+      const num = parseInt(numMatch[1]);
+      if (num >= 0 && num <= 14) {
+        result.number = num;
+        if (!result.color) {
+          result.color = num === 0 ? 'white' : num <= 7 ? 'red' : 'black';
+        }
+      }
+    }
+    
+    return result.color ? result : null;
+  }
+
   function debugUI() {
     log('🔍 ========== DEBUG UI BLAZE ==========');
     addLog('🔍 Iniciando debug completo...');
@@ -896,6 +1082,9 @@
     // Escutar mensagens postMessage
     window.addEventListener('message', onPostMessage);
     
+    // Iniciar MutationObserver para detectar mudanças no DOM
+    startBlazeObserver();
+    
     connectionStatus = 'connected';
     updateStatus('Conectado', null, currentBetAmount);
     addLog('🔗 Conectado - Aguardando sinais');
@@ -916,6 +1105,9 @@
     
     window.removeEventListener('storage', onStorageChange);
     window.removeEventListener('message', onPostMessage);
+    
+    // Parar MutationObserver
+    stopBlazeObserver();
     
     connectionStatus = 'disconnected';
     updateStatus('Desconectado', null, currentBetAmount);
