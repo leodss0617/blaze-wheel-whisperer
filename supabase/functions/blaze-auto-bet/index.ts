@@ -16,6 +16,7 @@ interface BlazeResponse {
   data?: any;
   error?: string;
   balance?: number;
+  retryAfter?: number;
 }
 
 serve(async (req) => {
@@ -140,7 +141,8 @@ serve(async (req) => {
         const timeoutId = setTimeout(() => controller.abort(), 10000);
         
         try {
-          const gameRes = await fetch('https://blaze.bet.br/api/roulette_games/current', {
+          // Use correct Blaze Double endpoint
+          const gameRes = await fetch('https://blaze.bet.br/api/singleplayer-originals/originals/roulette_games/current/1', {
             method: 'GET',
             headers: baseHeaders,
             signal: controller.signal,
@@ -148,10 +150,11 @@ serve(async (req) => {
           clearTimeout(timeoutId);
           
           if (!gameRes.ok) {
+            console.log('Game status response:', gameRes.status);
             response = { success: false, error: 'Erro ao buscar status do jogo' };
           } else {
             const gameData = await gameRes.json();
-            console.log('Game status:', JSON.stringify(gameData).substring(0, 200));
+            console.log('Game status:', JSON.stringify(gameData).substring(0, 300));
             response = { success: true, data: gameData };
           }
         } catch (fetchError) {
@@ -169,14 +172,14 @@ serve(async (req) => {
         }
 
         const colorCode = body.color === 'red' ? 1 : 2;
-        console.log(`Placing bet: ${body.amount} on ${body.color} (code: ${colorCode})`);
+        console.log(`Placing bet: R$ ${body.amount} on ${body.color} (code: ${colorCode})`);
         
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
         
         try {
-          // First get current game
-          const currentGameRes = await fetch('https://blaze.bet.br/api/roulette_games/current', {
+          // Use correct Blaze Double endpoint for current game
+          const currentGameRes = await fetch('https://blaze.bet.br/api/singleplayer-originals/originals/roulette_games/current/1', {
             method: 'GET',
             headers: baseHeaders,
             signal: controller.signal,
@@ -184,61 +187,119 @@ serve(async (req) => {
           
           if (!currentGameRes.ok) {
             clearTimeout(timeoutId);
-            response = { success: false, error: 'Não foi possível obter jogo atual' };
+            const errorText = await currentGameRes.text();
+            console.error('Failed to get current game:', currentGameRes.status, errorText);
+            response = { success: false, error: `Não foi possível obter jogo atual: ${currentGameRes.status}` };
             break;
           }
           
           const currentGame = await currentGameRes.json();
-          console.log('Current game:', currentGame.id, 'status:', currentGame.status);
+          console.log('Current game response:', JSON.stringify(currentGame).substring(0, 300));
           
-          // Check if betting is open
-          if (currentGame.status !== 'waiting') {
+          // Parse game ID and status - handle different response structures
+          const gameId = currentGame.id || currentGame.game_id || currentGame.current?.id;
+          const gameStatus = currentGame.status || currentGame.current?.status;
+          
+          console.log(`Game ID: ${gameId}, Status: ${gameStatus}`);
+          
+          if (!gameId) {
             clearTimeout(timeoutId);
+            response = { success: false, error: 'Não foi possível obter ID do jogo' };
+            break;
+          }
+          
+          // Check if betting is open - status can be 'waiting', 'bet', 'betting', or similar
+          const bettingStatuses = ['waiting', 'bet', 'betting', 'open'];
+          if (gameStatus && !bettingStatuses.includes(gameStatus.toLowerCase())) {
+            clearTimeout(timeoutId);
+            console.log(`Betting closed. Status: ${gameStatus}`);
             response = { 
               success: false, 
-              error: `Apostas não abertas. Status: ${currentGame.status}` 
+              error: `Apostas não abertas. Status: ${gameStatus}`,
+              retryAfter: 5 // Suggest retry after 5 seconds
             };
             break;
           }
           
-          // Place the bet
-          const betRes = await fetch('https://blaze.bet.br/api/roulette_bets', {
+          // Place the bet using correct endpoint
+          const betPayload = {
+            amount: String(body.amount), // Some APIs expect string
+            color: colorCode,
+            currency_type: 'BRL',
+            free_bet: false,
+          };
+          
+          console.log('Bet payload:', JSON.stringify(betPayload));
+          
+          // Try the singleplayer-originals bet endpoint
+          const betRes = await fetch('https://blaze.bet.br/api/singleplayer-originals/originals/roulette_bets', {
             method: 'POST',
             headers: baseHeaders,
-            body: JSON.stringify({
-              amount: body.amount,
-              color: colorCode,
-              game_id: currentGame.id,
-              free_bet: false,
-            }),
+            body: JSON.stringify(betPayload),
             signal: controller.signal,
           });
+          
+          const betResponseText = await betRes.text();
           clearTimeout(timeoutId);
           
+          console.log('Bet response:', betRes.status, betResponseText.substring(0, 500));
+          
           if (!betRes.ok) {
-            const errorText = await betRes.text();
-            console.error('Bet failed:', betRes.status, errorText);
-            response = { 
-              success: false, 
-              error: `Erro ao apostar: ${betRes.status} - ${errorText}` 
-            };
+            // Try alternative endpoint if first fails
+            console.log('Trying alternative bet endpoint...');
+            const altBetRes = await fetch('https://blaze.bet.br/api/roulette_bets', {
+              method: 'POST',
+              headers: baseHeaders,
+              body: JSON.stringify({
+                amount: body.amount,
+                color: colorCode,
+                game_id: gameId,
+                free_bet: false,
+              }),
+            });
+            
+            if (!altBetRes.ok) {
+              const altErrorText = await altBetRes.text();
+              console.error('Alt bet also failed:', altBetRes.status, altErrorText);
+              response = { 
+                success: false, 
+                error: `Erro ao apostar: ${betRes.status} - ${betResponseText.substring(0, 200)}` 
+              };
+            } else {
+              const altBetData = await altBetRes.json();
+              console.log('Alt bet placed successfully:', altBetData);
+              response = { 
+                success: true, 
+                data: {
+                  bet_id: altBetData.id,
+                  amount: body.amount,
+                  color: body.color,
+                  game_id: gameId,
+                }
+              };
+            }
           } else {
-            const betData = await betRes.json();
+            let betData;
+            try {
+              betData = JSON.parse(betResponseText);
+            } catch (e) {
+              betData = { raw: betResponseText };
+            }
             console.log('Bet placed successfully:', betData);
             response = { 
               success: true, 
               data: {
-                bet_id: betData.id,
+                bet_id: betData.id || 'unknown',
                 amount: body.amount,
                 color: body.color,
-                game_id: currentGame.id,
+                game_id: gameId,
               }
             };
           }
         } catch (fetchError) {
           clearTimeout(timeoutId);
           console.error('Bet error:', fetchError);
-          response = { success: false, error: 'Erro de conexão ao apostar' };
+          response = { success: false, error: `Erro de conexão ao apostar: ${fetchError}` };
         }
         break;
       }
