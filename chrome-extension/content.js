@@ -98,46 +98,166 @@
   }
 
   function debugUI() {
-    log('🔍 Debugando elementos da UI...');
-    addLog('🔍 Verificando elementos...');
+    log('🔍 ========== DEBUG UI BLAZE ==========');
+    addLog('🔍 Iniciando debug completo...');
+    
+    // Detectar qual jogo está ativo
+    const gameType = detectGameType();
+    log('Tipo de jogo detectado:', gameType);
+    addLog(`Jogo: ${gameType}`);
     
     // Verificar input de aposta
     const betInput = getBetInput();
-    log('Input de aposta:', betInput ? '✅ Encontrado' : '❌ Não encontrado', betInput);
+    log('Input de aposta:', betInput ? '✅ Encontrado' : '❌ Não encontrado');
+    if (betInput) {
+      log('  - Tag:', betInput.tagName);
+      log('  - Class:', betInput.className);
+      log('  - Type:', betInput.type);
+      log('  - Value:', betInput.value);
+      log('  - Placeholder:', betInput.placeholder);
+      log('  - Parent:', betInput.parentElement?.className);
+    }
     addLog(`Input valor: ${betInput ? '✅' : '❌'}`);
     
     // Verificar botões de cor
     const redBtn = getColorButton('red');
     const blackBtn = getColorButton('black');
-    log('Botão vermelho:', redBtn ? '✅ Encontrado' : '❌ Não encontrado', redBtn);
-    log('Botão preto:', blackBtn ? '✅ Encontrado' : '❌ Não encontrado', blackBtn);
-    addLog(`Btn vermelho: ${redBtn ? '✅' : '❌'} | Btn preto: ${blackBtn ? '✅' : '❌'}`);
+    const whiteBtn = getColorButton('white');
+    log('Botão vermelho:', redBtn ? '✅ Encontrado' : '❌ Não encontrado');
+    if (redBtn) log('  - Class:', redBtn.className, '- Text:', redBtn.textContent?.substring(0, 20));
+    log('Botão preto:', blackBtn ? '✅ Encontrado' : '❌ Não encontrado');
+    if (blackBtn) log('  - Class:', blackBtn.className, '- Text:', blackBtn.textContent?.substring(0, 20));
+    log('Botão branco:', whiteBtn ? '✅ Encontrado' : '❌ Não encontrado');
+    addLog(`🔴${redBtn ? '✅' : '❌'} ⚫${blackBtn ? '✅' : '❌'} ⚪${whiteBtn ? '✅' : '❌'}`);
     
     // Verificar botão de confirmação
     const confirmBtn = getConfirmButton();
-    log('Botão confirmar:', confirmBtn ? '✅ Encontrado' : '❌ Não encontrado', confirmBtn);
+    log('Botão confirmar:', confirmBtn ? '✅ Encontrado' : '❌ Não encontrado');
+    if (confirmBtn) log('  - Class:', confirmBtn.className, '- Text:', confirmBtn.textContent?.substring(0, 20));
     addLog(`Btn confirmar: ${confirmBtn ? '✅' : '❌'}`);
     
     // Verificar status de apostas
-    const bettingOpen = isBettingOpen();
-    log('Apostas abertas:', bettingOpen ? '✅ SIM' : '❌ NÃO');
-    addLog(`Apostas abertas: ${bettingOpen ? '✅ SIM' : '❌ NÃO'}`);
+    const bettingStatus = getBettingStatus();
+    log('Status apostas:', bettingStatus);
+    addLog(`Status: ${bettingStatus.open ? '✅ ABERTO' : '❌ FECHADO'} - ${bettingStatus.phase}`);
     
-    // Listar todos os buttons na página
-    const allButtons = document.querySelectorAll('button');
-    log(`Total de botões na página: ${allButtons.length}`);
-    allButtons.forEach((btn, i) => {
-      if (btn.offsetParent !== null) { // Visível
-        log(`  Botão ${i}:`, btn.className, btn.textContent?.substring(0, 30));
+    // Detectar elementos específicos do Double
+    log('\n--- Estrutura Double ---');
+    const doubleContainer = document.querySelector('.double-container, [class*="double"], .roulette-container, [class*="roulette"]');
+    log('Container Double:', doubleContainer ? '✅' : '❌', doubleContainer?.className);
+    
+    // Buscar área de apostas
+    const betArea = document.querySelector('.bet-area, .betting-area, [class*="bet-area"], [class*="betting"]');
+    log('Área de apostas:', betArea ? '✅' : '❌', betArea?.className);
+    
+    // Listar elementos clicáveis com cores
+    log('\n--- Elementos com cores ---');
+    const colorElements = document.querySelectorAll('[class*="red"], [class*="black"], [class*="white"], [class*="vermelho"], [class*="preto"], [class*="branco"]');
+    colorElements.forEach((el, i) => {
+      if (el.offsetParent !== null) {
+        log(`  Cor ${i}:`, el.tagName, el.className.substring(0, 50), '- Clicável:', isClickable(el));
       }
     });
     
-    // Listar todos os inputs
-    const allInputs = document.querySelectorAll('input');
-    log(`Total de inputs na página: ${allInputs.length}`);
-    allInputs.forEach((input, i) => {
-      log(`  Input ${i}:`, input.type, input.className, input.placeholder);
+    // Listar botões visíveis
+    log('\n--- Botões visíveis ---');
+    const allButtons = document.querySelectorAll('button, [role="button"], .btn, [class*="button"]');
+    let visibleBtnCount = 0;
+    allButtons.forEach((btn, i) => {
+      if (btn.offsetParent !== null && visibleBtnCount < 15) {
+        visibleBtnCount++;
+        const text = btn.textContent?.trim().substring(0, 25) || '';
+        const cls = btn.className?.substring(0, 40) || '';
+        log(`  Btn ${i}: [${btn.tagName}] "${text}" class="${cls}"`);
+      }
     });
+    
+    // Listar inputs visíveis
+    log('\n--- Inputs visíveis ---');
+    const allInputs = document.querySelectorAll('input, [contenteditable="true"]');
+    allInputs.forEach((input, i) => {
+      if (input.offsetParent !== null) {
+        log(`  Input ${i}: type=${input.type} class="${input.className}" placeholder="${input.placeholder}" value="${input.value}"`);
+      }
+    });
+    
+    // Verificar timer/contador
+    log('\n--- Timer/Contador ---');
+    const timerElements = document.querySelectorAll('[class*="timer"], [class*="countdown"], [class*="time"], [class*="clock"]');
+    timerElements.forEach((el, i) => {
+      if (el.offsetParent !== null) {
+        log(`  Timer ${i}:`, el.className, '- Texto:', el.textContent?.trim().substring(0, 20));
+      }
+    });
+    
+    log('🔍 ========== FIM DEBUG ==========');
+    addLog('🔍 Debug completo - veja console');
+  }
+
+  function detectGameType() {
+    const url = window.location.href.toLowerCase();
+    if (url.includes('double')) return 'double';
+    if (url.includes('crash')) return 'crash';
+    if (url.includes('dice')) return 'dice';
+    
+    // Detectar por elementos na página
+    if (document.querySelector('[class*="double"]')) return 'double';
+    if (document.querySelector('[class*="crash"]')) return 'crash';
+    
+    return 'unknown';
+  }
+
+  function isClickable(el) {
+    return el.tagName === 'BUTTON' || 
+           el.tagName === 'A' || 
+           el.getAttribute('role') === 'button' ||
+           el.onclick !== null ||
+           el.style.cursor === 'pointer' ||
+           window.getComputedStyle(el).cursor === 'pointer';
+  }
+
+  function getBettingStatus() {
+    const result = { open: false, phase: 'unknown', timeLeft: null };
+    
+    // Verificar fases do jogo
+    const phases = {
+      waiting: ['aguardando', 'waiting', 'faça sua aposta', 'place your bet', 'apostas abertas', 'bet now'],
+      rolling: ['girando', 'rolling', 'em andamento', 'spinning'],
+      complete: ['complete', 'resultado', 'result']
+    };
+    
+    const pageText = (document.body.innerText || '').toLowerCase();
+    
+    for (const [phase, keywords] of Object.entries(phases)) {
+      if (keywords.some(k => pageText.includes(k))) {
+        result.phase = phase;
+        result.open = phase === 'waiting';
+        break;
+      }
+    }
+    
+    // Verificar timer
+    const timerEl = document.querySelector('[class*="timer"], [class*="countdown"]');
+    if (timerEl) {
+      const timeText = timerEl.textContent?.trim();
+      if (timeText) {
+        result.timeLeft = timeText;
+        // Se tem timer visível, provavelmente apostas estão abertas
+        const seconds = parseFloat(timeText);
+        if (!isNaN(seconds) && seconds > 0) {
+          result.open = true;
+          result.phase = 'waiting';
+        }
+      }
+    }
+    
+    // Verificar se botões de cor estão habilitados
+    const colorBtn = document.querySelector('[class*="red"], [class*="black"]');
+    if (colorBtn && !colorBtn.classList.contains('disabled') && !colorBtn.hasAttribute('disabled')) {
+      result.open = true;
+    }
+    
+    return result;
   }
 
   function toggleAutoBet() {
@@ -203,37 +323,56 @@
   function getBetInput() {
     log('Procurando input de aposta...');
     
-    // Tentar diferentes seletores para o input de aposta
+    // Seletores específicos do Blaze Double (ordem de prioridade)
     const selectors = [
-      'input[data-testid="bet-input"]',
-      'input[type="number"][placeholder*="Valor"]',
-      'input[type="text"][placeholder*="R$"]',
+      // Seletores específicos Blaze
+      'input.input-field', // Input comum Blaze
       '.bet-input input',
-      'input.input-value',
-      '.double-bet input[type="number"]',
-      '.roulette input[type="number"]',
-      '.game-double input',
+      '.input-value input',
+      'input[class*="input"]',
+      
+      // Seletores por área de apostas
+      '.betting-area input',
+      '.bet-area input',
+      '.double-bet input',
+      '[class*="betting"] input',
+      '[class*="bet-form"] input',
+      
+      // Seletores genéricos
       'input[type="number"]',
-      'input[inputmode="decimal"]',
-      'input[inputmode="numeric"]',
+      'input[type="text"][inputmode="decimal"]',
+      'input[type="text"][inputmode="numeric"]',
+      'input[placeholder*="0"]',
+      'input[placeholder*="R$"]',
+      'input[placeholder*="valor"]',
+      'input[placeholder*="Valor"]',
     ];
     
     for (const selector of selectors) {
-      const input = document.querySelector(selector);
-      if (input && input.offsetParent !== null) {
-        log(`  ✅ Input encontrado com seletor: ${selector}`);
-        return input;
+      const inputs = document.querySelectorAll(selector);
+      for (const input of inputs) {
+        // Verificar se está visível e parece ser input de aposta
+        if (input && input.offsetParent !== null) {
+          // Evitar inputs de busca, login, etc
+          const isSearchOrAuth = input.closest('[class*="search"], [class*="login"], [class*="auth"], header, nav');
+          if (!isSearchOrAuth) {
+            log(`  ✅ Input encontrado: ${selector} - class="${input.className}"`);
+            return input;
+          }
+        }
       }
     }
     
-    // Busca genérica
-    const inputs = document.querySelectorAll('input');
-    for (const input of inputs) {
-      if (input.offsetParent !== null && 
-          (input.type === 'number' || input.type === 'text') &&
-          (input.closest('.bet, .double, .roulette, [class*="bet"], [class*="game"]'))) {
-        log('  ✅ Input encontrado via busca genérica');
-        return input;
+    // Busca mais agressiva - qualquer input numérico na área do jogo
+    const gameArea = document.querySelector('[class*="double"], [class*="game"], [class*="roulette"], main, .main-content');
+    if (gameArea) {
+      const inputs = gameArea.querySelectorAll('input');
+      for (const input of inputs) {
+        if (input.offsetParent !== null && 
+            (input.type === 'number' || input.type === 'text' || input.type === '')) {
+          log('  ✅ Input encontrado na área do jogo');
+          return input;
+        }
       }
     }
     
@@ -244,43 +383,102 @@
   function getColorButton(color) {
     log(`Procurando botão ${color}...`);
     
-    const colorClass = color === 'red' ? 'red' : 'black';
-    const colorText = color === 'red' ? ['vermelho', 'red'] : ['preto', 'black'];
+    // Mapeamento de cores
+    const colorMap = {
+      red: { 
+        classes: ['red', 'vermelho', 'color-red', 'btn-red'],
+        bgColors: ['#f12c4c', '#ff0000', '#e91e63', '#f44336', 'rgb(241, 44, 76)'],
+        multiplier: '2x'
+      },
+      black: { 
+        classes: ['black', 'preto', 'color-black', 'btn-black'],
+        bgColors: ['#1e1e1e', '#000000', '#333333', '#212121', 'rgb(30, 30, 30)'],
+        multiplier: '2x'
+      },
+      white: { 
+        classes: ['white', 'branco', 'color-white', 'btn-white'],
+        bgColors: ['#ffffff', '#fafafa', 'rgb(255, 255, 255)'],
+        multiplier: '14x'
+      }
+    };
     
-    // Tentar diferentes seletores
-    const selectors = [
-      `button[data-testid="${colorClass}-button"]`,
-      `button.${colorClass}`,
-      `.${colorClass}-button`,
-      `button[class*="${colorClass}"]`,
-      `.bet-button.${colorClass}`,
-      `.double-bet-button.${colorClass}`,
-      `[class*="${colorClass}"][role="button"]`,
-      `div[class*="${colorClass}"][onclick]`,
-    ];
+    const colorInfo = colorMap[color] || colorMap.red;
     
-    for (const selector of selectors) {
-      const btn = document.querySelector(selector);
-      if (btn && btn.offsetParent !== null) {
-        log(`  ✅ Botão encontrado com seletor: ${selector}`);
-        return btn;
+    // 1. Seletores específicos por classe
+    const classSelectors = colorInfo.classes.flatMap(c => [
+      `button[class*="${c}"]`,
+      `div[class*="${c}"][class*="bet"]`,
+      `div[class*="${c}"][class*="button"]`,
+      `[class*="${c}"][role="button"]`,
+      `.${c}`,
+      `[class*="color-${c}"]`,
+      `[class*="bet-${c}"]`,
+    ]);
+    
+    for (const selector of classSelectors) {
+      const elements = document.querySelectorAll(selector);
+      for (const el of elements) {
+        if (el.offsetParent !== null && isClickable(el)) {
+          log(`  ✅ Botão ${color} encontrado: ${selector}`);
+          return el;
+        }
       }
     }
     
-    // Busca por texto ou atributo
-    const elements = document.querySelectorAll('button, .bet-button, [role="button"], div[class*="color"], div[class*="button"]');
-    for (const el of elements) {
-      const text = (el.textContent || '').toLowerCase();
+    // 2. Busca por cor de fundo
+    const allClickables = document.querySelectorAll('button, [role="button"], div[class*="bet"], div[class*="color"], div[class*="button"]');
+    for (const el of allClickables) {
+      if (el.offsetParent === null) continue;
+      
+      const style = window.getComputedStyle(el);
+      const bgColor = style.backgroundColor.toLowerCase();
+      
+      for (const targetColor of colorInfo.bgColors) {
+        if (bgColor.includes(targetColor.toLowerCase()) || 
+            normalizeColor(bgColor) === normalizeColor(targetColor)) {
+          log(`  ✅ Botão ${color} encontrado por cor de fundo: ${bgColor}`);
+          return el;
+        }
+      }
+    }
+    
+    // 3. Busca por data attributes
+    const dataSelectors = [
+      `[data-color="${color}"]`,
+      `[data-bet-color="${color}"]`,
+      `[data-value="${color}"]`,
+    ];
+    
+    for (const selector of dataSelectors) {
+      const el = document.querySelector(selector);
+      if (el && el.offsetParent !== null) {
+        log(`  ✅ Botão ${color} encontrado por data-attribute: ${selector}`);
+        return el;
+      }
+    }
+    
+    // 4. Busca por texto/multiplicador
+    const textTargets = color === 'red' ? ['vermelho', 'red', '2x'] : 
+                        color === 'black' ? ['preto', 'black', '2x'] : 
+                        ['branco', 'white', '14x'];
+    
+    const clickables = document.querySelectorAll('button, [role="button"], div[class*="bet"], [class*="color"]');
+    for (const el of clickables) {
+      if (el.offsetParent === null) continue;
+      const text = (el.textContent || '').toLowerCase().trim();
       const classes = (el.className || '').toLowerCase();
-      const style = el.getAttribute('style') || '';
       
-      // Verificar por texto ou classe
-      const matchesText = colorText.some(t => text.includes(t));
-      const matchesClass = classes.includes(colorClass);
-      const matchesStyle = color === 'red' ? style.includes('red') || style.includes('#f') : style.includes('black') || style.includes('#0');
-      
-      if ((matchesText || matchesClass || matchesStyle) && el.offsetParent !== null) {
-        log(`  ✅ Botão encontrado via busca por texto/classe`);
+      // Verificar se contém o texto da cor específica
+      if (textTargets.some(t => text.includes(t) || classes.includes(t))) {
+        // Para 2x, precisa verificar a cor também
+        if (text === '2x') {
+          const style = window.getComputedStyle(el);
+          const bgColor = style.backgroundColor;
+          const isRed = colorInfo.bgColors.some(c => normalizeColor(bgColor) === normalizeColor(c));
+          if (color === 'red' && !isRed) continue;
+          if (color === 'black' && isRed) continue;
+        }
+        log(`  ✅ Botão ${color} encontrado por texto: "${text}"`);
         return el;
       }
     }
@@ -289,79 +487,80 @@
     return null;
   }
 
+  function normalizeColor(color) {
+    // Normaliza cores para comparação
+    if (!color) return '';
+    color = color.toLowerCase().trim();
+    
+    // Converter rgb para hex aproximado
+    const rgbMatch = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+    if (rgbMatch) {
+      const [, r, g, b] = rgbMatch.map(Number);
+      // Classificar cor
+      if (r > 200 && g < 100 && b < 100) return 'red';
+      if (r < 50 && g < 50 && b < 50) return 'black';
+      if (r > 200 && g > 200 && b > 200) return 'white';
+    }
+    
+    if (color.includes('#f12c4c') || color.includes('#f44336')) return 'red';
+    if (color.includes('#1e1e1e') || color.includes('#000')) return 'black';
+    if (color.includes('#fff')) return 'white';
+    
+    return color;
+  }
+
   function getConfirmButton() {
     log('Procurando botão de confirmação...');
     
+    // Seletores específicos para Blaze
     const selectors = [
-      'button[data-testid="confirm-bet"]',
-      'button[type="submit"]',
-      '.confirm-bet',
-      'button.confirm',
-      '.bet-confirm',
+      // Botões de confirmação específicos
       'button[class*="confirm"]',
       'button[class*="submit"]',
+      'button[class*="apostar"]',
+      'button[class*="bet-button"]',
+      '.confirm-bet',
+      '.bet-confirm',
+      'button[type="submit"]',
+      
+      // Seletores por área
+      '.betting-area button[class*="primary"]',
+      '.bet-form button',
+      '[class*="bet"] button[class*="btn"]',
     ];
     
     for (const selector of selectors) {
       const btn = document.querySelector(selector);
-      if (btn && btn.offsetParent !== null) {
+      if (btn && btn.offsetParent !== null && !btn.disabled) {
         log(`  ✅ Botão confirmar encontrado: ${selector}`);
         return btn;
       }
     }
     
-    // Busca por texto
-    const buttons = document.querySelectorAll('button');
+    // Busca por texto em português e inglês
+    const confirmTexts = ['apostar', 'confirmar', 'bet', 'place bet', 'fazer aposta', 'start bet'];
+    const buttons = document.querySelectorAll('button, [role="button"]');
     for (const btn of buttons) {
-      const text = (btn.textContent || '').toLowerCase();
-      if ((text.includes('apostar') || text.includes('confirmar') || text.includes('bet') || text.includes('place')) &&
-          btn.offsetParent !== null && !btn.disabled) {
-        log('  ✅ Botão confirmar encontrado via texto');
-        return btn;
+      const text = (btn.textContent || '').toLowerCase().trim();
+      if (confirmTexts.some(t => text.includes(t)) && btn.offsetParent !== null && !btn.disabled) {
+        // Evitar botões de cor que podem ter texto similar
+        if (!btn.className.toLowerCase().includes('red') && 
+            !btn.className.toLowerCase().includes('black') &&
+            !btn.className.toLowerCase().includes('white')) {
+          log('  ✅ Botão confirmar encontrado via texto:', text);
+          return btn;
+        }
       }
     }
     
-    log('  ℹ️ Botão confirmar não encontrado (pode não ser necessário)');
+    log('  ℹ️ Botão confirmar não encontrado (fluxo pode ser direto pelo botão de cor)');
     return null;
   }
 
   function isBettingOpen() {
-    log('Verificando se apostas estão abertas...');
-    
-    // Verificar indicadores visuais
-    const waitingIndicators = [
-      '.waiting',
-      '.bet-open',
-      '[data-status="waiting"]',
-      '.status-waiting',
-      '[class*="waiting"]',
-      '[class*="open"]',
-    ];
-    
-    for (const selector of waitingIndicators) {
-      if (document.querySelector(selector)) {
-        log(`  ✅ Indicador encontrado: ${selector}`);
-        return true;
-      }
-    }
-    
-    // Verificar se o botão de aposta está habilitado
-    const betButton = getColorButton('red') || getColorButton('black');
-    if (betButton && !betButton.disabled && !betButton.classList.contains('disabled')) {
-      log('  ✅ Botão de aposta habilitado');
-      return true;
-    }
-    
-    // Verificar texto na página
-    const pageText = (document.body.innerText || '').toLowerCase();
-    if (pageText.includes('aguardando') || pageText.includes('waiting') || 
-        pageText.includes('faça sua aposta') || pageText.includes('place your bet')) {
-      log('  ✅ Texto indica apostas abertas');
-      return true;
-    }
-    
-    warn('  ⚠️ Não foi possível confirmar se apostas estão abertas');
-    return false;
+    const status = getBettingStatus();
+    log('Status de apostas:', status);
+    return status.open;
   }
 
   async function placeBet(color, amount) {
