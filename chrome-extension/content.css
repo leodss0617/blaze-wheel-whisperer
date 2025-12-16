@@ -132,3 +132,24 @@
     transform: translateX(0);
   }
 }
+
+/* Debug section */
+.bap-debug {
+  display: flex;
+  gap: 4px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 51, 102, 0.3);
+}
+
+.bap-debug button {
+  flex: 1;
+  border-radius: 4px;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.bap-debug button:hover {
+  transform: scale(1.02);
+  filter: brightness(1.2);
+}
