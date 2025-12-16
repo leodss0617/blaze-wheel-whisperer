@@ -1042,7 +1042,8 @@
   }
 
   async function placeBet(color, amount) {
-    log(`🎲 Iniciando aposta: ${color} R$ ${amount}`);
+    const colorLabel = color === 'red' ? 'VERMELHO' : color === 'black' ? 'PRETO' : 'BRANCO';
+    log(`🎲 Iniciando aposta: ${colorLabel} R$ ${amount}`);
     
     const now = Date.now();
     if (now - lastBetTime < CONFIG.minBetInterval) {
@@ -1057,7 +1058,7 @@
       return false;
     }
 
-    addLog(`🎯 Apostando R$ ${amount.toFixed(2)} no ${color === 'red' ? 'VERMELHO' : 'PRETO'}...`);
+    addLog(`🎯 Apostando R$ ${amount.toFixed(2)} no ${colorLabel}${color === 'white' ? ' (proteção)' : ''}...`);
 
     try {
       // 1. Definir valor da aposta
@@ -1102,7 +1103,8 @@
       }
 
       lastBetTime = now;
-      addLog(`✅ Aposta realizada: R$ ${amount.toFixed(2)} no ${color === 'red' ? 'VERMELHO' : 'PRETO'}`);
+      const successLabel = color === 'red' ? 'VERMELHO' : color === 'black' ? 'PRETO' : 'BRANCO';
+      addLog(`✅ Aposta realizada: R$ ${amount.toFixed(2)} no ${successLabel}${color === 'white' ? ' (proteção)' : ''}`);
       log('  ✅ Aposta concluída com sucesso!');
       
       // Notificar background script
@@ -1190,6 +1192,13 @@
       processSignal(event.data.data);
     }
     
+    // Handle white protection signals
+    if (event.data && event.data.type === 'WHITE_PROTECTION_SIGNAL') {
+      log('📨 White Protection Signal recebido:', event.data);
+      addLog('⚪ Proteção branco via postMessage');
+      processSignal(event.data.data);
+    }
+    
     // Respond to status requests from the app
     if (event.data && event.data.type === 'GET_EXTENSION_STATUS') {
       log('📨 Status request recebido');
@@ -1201,17 +1210,25 @@
     if (!isEnabled) return;
     
     try {
+      // Check for regular bet signals
       const signalData = localStorage.getItem(CONFIG.localStorageKey);
       if (signalData) {
-        log('📦 Verificando localStorage:', signalData);
-        processLocalStorageSignal(signalData);
+        log('📦 Verificando localStorage (bet):', signalData);
+        processLocalStorageSignal(signalData, CONFIG.localStorageKey);
+      }
+      
+      // Check for white protection signals
+      const whiteProtectionData = localStorage.getItem('blaze-white-protection-signal');
+      if (whiteProtectionData) {
+        log('📦 Verificando localStorage (white protection):', whiteProtectionData);
+        processLocalStorageSignal(whiteProtectionData, 'blaze-white-protection-signal');
       }
     } catch (err) {
       error('Erro ao ler localStorage:', err);
     }
   }
 
-  function processLocalStorageSignal(signalData) {
+  function processLocalStorageSignal(signalData, storageKey = CONFIG.localStorageKey) {
     try {
       const signal = JSON.parse(signalData);
       log('📥 Processando sinal localStorage:', signal);
@@ -1223,10 +1240,15 @@
       }
       
       lastProcessedSignalTime = signal.timestamp || Date.now();
+      
+      if (signal.isWhiteProtection) {
+        addLog('⚪ Proteção branco detectada via localStorage');
+      }
+      
       processSignal(signal);
       
       // Limpar sinal após processar
-      localStorage.removeItem(CONFIG.localStorageKey);
+      localStorage.removeItem(storageKey);
     } catch (err) {
       error('Erro ao processar sinal localStorage:', err);
     }
@@ -1238,7 +1260,8 @@
       return;
     }
     
-    if (!signal.color || (signal.color !== 'red' && signal.color !== 'black')) {
+    // Accept red, black, or white (for protection)
+    if (!signal.color || !['red', 'black', 'white'].includes(signal.color)) {
       warn('⚠️ Sinal inválido, cor não especificada:', signal);
       return;
     }
@@ -1248,8 +1271,11 @@
     currentBetAmount = signal.amount || currentBetAmount;
     currentColor = signal.color;
     
-    updateStatus('Conectado', signal.color === 'red' ? 'VERMELHO' : 'PRETO', currentBetAmount);
-    addLog(`📡 Sinal: ${signal.color === 'red' ? 'VERMELHO' : 'PRETO'} R$${currentBetAmount} (${signal.confidence || '?'}%)`);
+    const colorLabel = signal.color === 'red' ? 'VERMELHO' : signal.color === 'black' ? 'PRETO' : 'BRANCO';
+    const isProtection = signal.isWhiteProtection || signal.color === 'white';
+    
+    updateStatus('Conectado', colorLabel, currentBetAmount);
+    addLog(`📡 ${isProtection ? '⚪ PROTEÇÃO: ' : 'Sinal: '}${colorLabel} R$${currentBetAmount} (${signal.confidence || '?'}%)`);
     
     if (!isWaitingToBet) {
       isWaitingToBet = true;
@@ -1336,6 +1362,10 @@
       log('📡 BroadcastChannel message:', event.data);
       if (event.data && event.data.type === 'BET_SIGNAL') {
         addLog('📡 Sinal via BroadcastChannel');
+        processSignal(event.data.data);
+      }
+      if (event.data && event.data.type === 'WHITE_PROTECTION_SIGNAL') {
+        addLog('⚪ Proteção branco via BroadcastChannel');
         processSignal(event.data.data);
       }
       if (event.data && event.data.type === 'GET_STATUS') {

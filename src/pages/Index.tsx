@@ -333,6 +333,7 @@ const Index = () => {
                   currentPrediction={currentPrediction}
                   betAmount={baseBet}
                   galeLevel={galeLevel}
+                  whiteProtection={currentProtection}
                 />
               </TabsContent>
 
@@ -427,6 +428,7 @@ const Index = () => {
                     currentPrediction={currentPrediction}
                     betAmount={baseBet}
                     galeLevel={galeLevel}
+                    whiteProtection={currentProtection}
                   />
                 </TabsContent>
 

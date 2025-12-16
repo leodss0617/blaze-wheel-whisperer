@@ -74,10 +74,11 @@ export function useExtensionBridge() {
 
   // Send signal to extension
   const sendSignalToExtension = useCallback((
-    color: 'red' | 'black',
+    color: 'red' | 'black' | 'white',
     amount: number,
     confidence: number,
-    galeLevel: number = 0
+    galeLevel: number = 0,
+    isWhiteProtection: boolean = false
   ) => {
     const now = Date.now();
     
@@ -88,7 +89,7 @@ export function useExtensionBridge() {
     }
 
     const signal = {
-      type: 'BET_SIGNAL',
+      type: isWhiteProtection ? 'WHITE_PROTECTION_SIGNAL' : 'BET_SIGNAL',
       data: {
         color,
         amount,
@@ -96,14 +97,16 @@ export function useExtensionBridge() {
         galeLevel,
         timestamp: now,
         shouldBet: true,
+        isWhiteProtection,
       }
     };
 
-    console.log('📡 Sending signal to extension:', signal);
+    console.log(`📡 Sending ${isWhiteProtection ? 'white protection' : 'bet'} signal to extension:`, signal);
 
     // Method 1: localStorage
     try {
-      localStorage.setItem(STORAGE_KEYS.SIGNAL, JSON.stringify(signal.data));
+      const storageKey = isWhiteProtection ? 'blaze-white-protection-signal' : STORAGE_KEYS.SIGNAL;
+      localStorage.setItem(storageKey, JSON.stringify(signal.data));
     } catch (e) {
       console.error('localStorage error:', e);
     }
@@ -122,9 +125,11 @@ export function useExtensionBridge() {
 
     lastSentTimestamp.current = now;
     
+    const colorLabel = color === 'red' ? 'VERMELHO' : color === 'black' ? 'PRETO' : 'BRANCO';
+    
     setExtensionData(prev => ({
       ...prev,
-      lastSignalSent: `${color === 'red' ? 'VERMELHO' : 'PRETO'} - R$ ${amount.toFixed(2)}`,
+      lastSignalSent: `${isWhiteProtection ? '⚪ PROTEÇÃO ' : ''}${colorLabel} - R$ ${amount.toFixed(2)}`,
       status: {
         ...prev.status,
         lastActivity: new Date(),
@@ -148,8 +153,17 @@ export function useExtensionBridge() {
       prediction.predictedColor as 'red' | 'black',
       betAmount,
       prediction.confidence,
-      galeLevel
+      galeLevel,
+      false
     );
+  }, [sendSignalToExtension]);
+
+  // Send white protection signal
+  const sendWhiteProtectionSignal = useCallback((
+    amount: number,
+    confidence: number
+  ) => {
+    return sendSignalToExtension('white', amount, confidence, 0, true);
   }, [sendSignalToExtension]);
 
   // Convert extension results to BlazeRounds
@@ -341,6 +355,7 @@ export function useExtensionBridge() {
     extensionData,
     sendSignalToExtension,
     sendPrediction,
+    sendWhiteProtectionSignal,
     convertResultsToRounds,
     requestExtensionStatus,
     isInstalled: extensionData.status.installed,

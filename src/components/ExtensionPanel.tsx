@@ -1,28 +1,39 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Download, Chrome, CheckCircle2, AlertCircle, ExternalLink, Wifi, WifiOff, Activity } from 'lucide-react';
+import { Download, Chrome, CheckCircle2, AlertCircle, ExternalLink, Wifi, WifiOff, Activity, Shield } from 'lucide-react';
 import { useExtensionBridge } from '@/hooks/useExtensionBridge';
 import { ColorBall } from './ColorBall';
 import type { PredictionSignal } from '@/types/blaze';
+import type { WhiteProtectionSignal } from '@/hooks/useWhiteProtectionAI';
 
 interface ExtensionPanelProps {
   currentPrediction: PredictionSignal | null;
   betAmount: number;
   galeLevel: number;
+  whiteProtection?: WhiteProtectionSignal | null;
   onExtensionResults?: (rounds: { color: string; number: number; timestamp: Date }[]) => void;
 }
 
-export function ExtensionPanel({ currentPrediction, betAmount, galeLevel, onExtensionResults }: ExtensionPanelProps) {
+export function ExtensionPanel({ 
+  currentPrediction, 
+  betAmount, 
+  galeLevel, 
+  whiteProtection,
+  onExtensionResults 
+}: ExtensionPanelProps) {
   const {
     extensionData,
     sendPrediction,
+    sendWhiteProtectionSignal,
     convertResultsToRounds,
     isInstalled,
     isConnected,
   } = useExtensionBridge();
+
+  const lastSentProtectionId = useRef<string | null>(null);
 
   // Send prediction to extension when it changes
   useEffect(() => {
@@ -30,6 +41,18 @@ export function ExtensionPanel({ currentPrediction, betAmount, galeLevel, onExte
       sendPrediction(currentPrediction, betAmount, galeLevel);
     }
   }, [currentPrediction, betAmount, galeLevel, sendPrediction]);
+
+  // Send white protection signal when it changes
+  useEffect(() => {
+    if (whiteProtection && 
+        whiteProtection.shouldProtect && 
+        whiteProtection.id !== lastSentProtectionId.current &&
+        isConnected) {
+      lastSentProtectionId.current = whiteProtection.id;
+      const protectionAmount = betAmount * (whiteProtection.suggestedAmount / 100);
+      sendWhiteProtectionSignal(protectionAmount, whiteProtection.confidence);
+    }
+  }, [whiteProtection, betAmount, isConnected, sendWhiteProtectionSignal]);
 
   // Notify parent about extension results
   useEffect(() => {
@@ -143,6 +166,21 @@ export function ExtensionPanel({ currentPrediction, betAmount, galeLevel, onExte
             </p>
             <p className="text-[10px] text-center text-muted-foreground">
               Extensão executará automaticamente
+            </p>
+          </div>
+        )}
+
+        {/* White Protection Status */}
+        {isConnected && whiteProtection && whiteProtection.shouldProtect && (
+          <div className="p-2 rounded bg-white/10 border border-white/20">
+            <div className="flex items-center justify-center gap-1.5">
+              <Shield className="h-3 w-3 text-white" />
+              <p className="text-xs text-center">
+                ⚪ Proteção branco: <strong>R$ {(betAmount * (whiteProtection.suggestedAmount / 100)).toFixed(2)}</strong>
+              </p>
+            </div>
+            <p className="text-[10px] text-center text-muted-foreground">
+              {whiteProtection.confidence}% confiança • {whiteProtection.roundsSinceLastWhite} rodadas sem branco
             </p>
           </div>
         )}
