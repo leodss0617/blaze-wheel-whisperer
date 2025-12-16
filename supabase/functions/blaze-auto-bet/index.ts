@@ -175,10 +175,27 @@ serve(async (req) => {
         console.log(`Placing bet: R$ ${body.amount} on ${body.color} (code: ${colorCode})`);
         
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const timeoutId = setTimeout(() => controller.abort(), 20000);
         
         try {
-          // Use correct Blaze Double endpoint for current game
+          // First get wallet ID
+          const walletRes = await fetch('https://blaze.bet.br/api/wallets', {
+            method: 'GET',
+            headers: baseHeaders,
+            signal: controller.signal,
+          });
+          
+          let walletId = null;
+          if (walletRes.ok) {
+            const walletData = await walletRes.json();
+            if (Array.isArray(walletData) && walletData.length > 0) {
+              const brlWallet = walletData.find((w: any) => w.currency_type === 'BRL' || w.primary === true) || walletData[0];
+              walletId = brlWallet?.id;
+              console.log('Wallet ID:', walletId);
+            }
+          }
+          
+          // Get current game
           const currentGameRes = await fetch('https://blaze.bet.br/api/singleplayer-originals/originals/roulette_games/current/1', {
             method: 'GET',
             headers: baseHeaders,
@@ -194,13 +211,13 @@ serve(async (req) => {
           }
           
           const currentGame = await currentGameRes.json();
-          console.log('Current game response:', JSON.stringify(currentGame).substring(0, 300));
+          console.log('Current game:', JSON.stringify(currentGame).substring(0, 400));
           
-          // Parse game ID and status - handle different response structures
-          const gameId = currentGame.id || currentGame.game_id || currentGame.current?.id;
-          const gameStatus = currentGame.status || currentGame.current?.status;
+          const gameId = currentGame.id;
+          const gameStatus = currentGame.status;
+          const roomId = currentGame.room_id || 4;
           
-          console.log(`Game ID: ${gameId}, Status: ${gameStatus}`);
+          console.log(`Game ID: ${gameId}, Status: ${gameStatus}, Room: ${roomId}`);
           
           if (!gameId) {
             clearTimeout(timeoutId);
@@ -208,30 +225,29 @@ serve(async (req) => {
             break;
           }
           
-          // Check if betting is open - status can be 'waiting', 'bet', 'betting', or similar
-          const bettingStatuses = ['waiting', 'bet', 'betting', 'open'];
-          if (gameStatus && !bettingStatuses.includes(gameStatus.toLowerCase())) {
+          // Check if betting is open
+          if (gameStatus !== 'waiting') {
             clearTimeout(timeoutId);
             console.log(`Betting closed. Status: ${gameStatus}`);
             response = { 
               success: false, 
               error: `Apostas não abertas. Status: ${gameStatus}`,
-              retryAfter: 5 // Suggest retry after 5 seconds
+              retryAfter: 5
             };
             break;
           }
           
-          // Place the bet using correct endpoint
+          // Try bet with game_id (most common format)
           const betPayload = {
-            amount: String(body.amount), // Some APIs expect string
+            amount: parseFloat(String(body.amount)),
             color: colorCode,
-            currency_type: 'BRL',
+            game_id: gameId,
+            wallet_id: walletId,
             free_bet: false,
           };
           
           console.log('Bet payload:', JSON.stringify(betPayload));
           
-          // Try the singleplayer-originals bet endpoint
           const betRes = await fetch('https://blaze.bet.br/api/singleplayer-originals/originals/roulette_bets', {
             method: 'POST',
             headers: baseHeaders,
@@ -241,59 +257,30 @@ serve(async (req) => {
           
           const betResponseText = await betRes.text();
           clearTimeout(timeoutId);
-          
           console.log('Bet response:', betRes.status, betResponseText.substring(0, 500));
           
-          if (!betRes.ok) {
-            // Try alternative endpoint if first fails
-            console.log('Trying alternative bet endpoint...');
-            const altBetRes = await fetch('https://blaze.bet.br/api/roulette_bets', {
-              method: 'POST',
-              headers: baseHeaders,
-              body: JSON.stringify({
-                amount: body.amount,
-                color: colorCode,
-                game_id: gameId,
-                free_bet: false,
-              }),
-            });
-            
-            if (!altBetRes.ok) {
-              const altErrorText = await altBetRes.text();
-              console.error('Alt bet also failed:', altBetRes.status, altErrorText);
-              response = { 
-                success: false, 
-                error: `Erro ao apostar: ${betRes.status} - ${betResponseText.substring(0, 200)}` 
-              };
-            } else {
-              const altBetData = await altBetRes.json();
-              console.log('Alt bet placed successfully:', altBetData);
-              response = { 
-                success: true, 
-                data: {
-                  bet_id: altBetData.id,
-                  amount: body.amount,
-                  color: body.color,
-                  game_id: gameId,
-                }
-              };
-            }
-          } else {
+          if (betRes.ok) {
             let betData;
             try {
               betData = JSON.parse(betResponseText);
-            } catch (e) {
+            } catch {
               betData = { raw: betResponseText };
             }
             console.log('Bet placed successfully:', betData);
             response = { 
               success: true, 
               data: {
-                bet_id: betData.id || 'unknown',
+                bet_id: betData.id || 'placed',
                 amount: body.amount,
                 color: body.color,
                 game_id: gameId,
               }
+            };
+          } else {
+            console.error('Bet failed:', betRes.status, betResponseText);
+            response = { 
+              success: false, 
+              error: `Erro ao apostar: ${betRes.status} - ${betResponseText.substring(0, 200)}` 
             };
           }
         } catch (fetchError) {
