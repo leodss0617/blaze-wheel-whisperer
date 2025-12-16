@@ -32,13 +32,16 @@ export function useAutoBet() {
     };
   });
 
-  const [stats, setStats] = useState<AutoBetStats>({
-    totalBets: 0,
-    wins: 0,
-    losses: 0,
-    totalProfit: 0,
-    currentStreak: 0,
-    balance: 0,
+  const [stats, setStats] = useState<AutoBetStats>(() => {
+    const saved = localStorage.getItem('autobet-stats');
+    return saved ? JSON.parse(saved) : {
+      totalBets: 0,
+      wins: 0,
+      losses: 0,
+      totalProfit: 0,
+      currentStreak: 0,
+      balance: 0,
+    };
   });
 
   const [isConnected, setIsConnected] = useState(false);
@@ -46,45 +49,85 @@ export function useAutoBet() {
   const [lastBetResult, setLastBetResult] = useState<'win' | 'loss' | null>(null);
   const [currentGale, setCurrentGale] = useState(0);
   const [isBetting, setIsBetting] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   
   const { toast } = useToast();
   const betInProgress = useRef(false);
   const sessionStartBalance = useRef<number | null>(null);
+  const lastBetPlaced = useRef<string | null>(null);
 
   // Save config to localStorage
   useEffect(() => {
     localStorage.setItem('autobet-config', JSON.stringify(config));
   }, [config]);
 
+  // Save stats to localStorage
+  useEffect(() => {
+    localStorage.setItem('autobet-stats', JSON.stringify(stats));
+  }, [stats]);
+
+  // Auto check balance on mount
+  useEffect(() => {
+    checkBalance();
+  }, []);
+
   // Check balance
   const checkBalance = useCallback(async (): Promise<number | null> => {
     try {
       setIsLoading(true);
+      setConnectionError(null);
+      console.log('🔄 Checking balance...');
+      
       const { data, error } = await supabase.functions.invoke('blaze-auto-bet', {
         body: { action: 'check_balance' },
       });
 
-      if (error || !data?.success) {
-        console.error('Balance check error:', error || data?.error);
+      console.log('📊 Balance response:', data, error);
+
+      if (error) {
+        console.error('Balance check error:', error);
+        setConnectionError(error.message || 'Erro de conexão');
+        setIsConnected(false);
         toast({
-          title: '❌ Erro',
-          description: data?.error || 'Não foi possível verificar o saldo',
+          title: '❌ Erro de conexão',
+          description: error.message || 'Não foi possível conectar à Blaze',
           variant: 'destructive',
         });
         return null;
       }
 
-      const balance = data.balance;
+      if (!data?.success) {
+        console.error('Balance check failed:', data?.error);
+        setConnectionError(data?.error || 'Token inválido ou expirado');
+        setIsConnected(false);
+        toast({
+          title: '❌ Erro',
+          description: data?.error || 'Token inválido ou expirado',
+          variant: 'destructive',
+        });
+        return null;
+      }
+
+      const balance = data.balance ?? 0;
+      console.log('✅ Balance:', balance);
+      
       setStats(prev => ({ ...prev, balance }));
       setIsConnected(true);
+      setConnectionError(null);
       
       if (sessionStartBalance.current === null) {
         sessionStartBalance.current = balance;
       }
 
+      toast({
+        title: '✅ Conectado',
+        description: `Saldo: R$ ${balance.toFixed(2)}`,
+      });
+
       return balance;
     } catch (error) {
-      console.error('Check balance error:', error);
+      console.error('Check balance exception:', error);
+      setConnectionError('Erro de conexão');
       setIsConnected(false);
       return null;
     } finally {
@@ -145,12 +188,26 @@ export function useAutoBet() {
 
   // Handle prediction signal - AUTO BET
   const handlePrediction = useCallback(async (
-    signal: PredictionSignal,
+    signal: PredictionSignal | null,
     predictionState: PredictionState,
     galeLevel: number
   ) => {
-    if (!config.enabled || !isConnected) {
-      console.log('Auto-bet disabled or not connected');
+    console.log('🎰 handlePrediction called:', {
+      enabled: config.enabled,
+      connected: isConnected,
+      state: predictionState,
+      signal: signal?.predictedColor,
+      gale: galeLevel,
+    });
+
+    if (!config.enabled) {
+      console.log('⏸️ Auto-bet disabled');
+      return;
+    }
+
+    if (!isConnected) {
+      console.log('❌ Not connected - checking balance...');
+      await checkBalance();
       return;
     }
 
@@ -175,13 +232,31 @@ export function useAutoBet() {
     }
 
     // Only bet when prediction state is active or gale
-    if (predictionState === 'analyzing' || !signal) return;
+    if (predictionState === 'analyzing' || !signal) {
+      console.log('⏳ Waiting for prediction...');
+      return;
+    }
 
     const color = signal.predictedColor as 'red' | 'black';
-    if (color !== 'red' && color !== 'black') return;
+    if (color !== 'red' && color !== 'black') {
+      console.log('⚠️ Invalid color:', signal.predictedColor);
+      return;
+    }
 
-    await placeBet(color, galeLevel);
-  }, [config, isConnected, stats.totalProfit, placeBet, toast]);
+    // Prevent duplicate bets for same signal
+    const betKey = `${signal.id || signal.timestamp.toString()}-${galeLevel}`;
+    if (lastBetPlaced.current === betKey) {
+      console.log('⏭️ Bet already placed for this signal');
+      return;
+    }
+
+    console.log('🚀 Placing bet:', color, 'gale:', galeLevel);
+    const success = await placeBet(color, galeLevel);
+    
+    if (success) {
+      lastBetPlaced.current = betKey;
+    }
+  }, [config, isConnected, stats.totalProfit, placeBet, toast, checkBalance]);
 
   // Record result
   const recordResult = useCallback((won: boolean, galeLevel: number) => {
@@ -273,6 +348,7 @@ export function useAutoBet() {
     isBetting,
     lastBetResult,
     currentGale,
+    connectionError,
     checkBalance,
     placeBet,
     handlePrediction,

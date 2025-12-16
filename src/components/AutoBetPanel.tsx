@@ -43,6 +43,7 @@ export function AutoBetPanel({
     isLoading,
     isBetting,
     currentGale,
+    connectionError,
     checkBalance,
     handlePrediction,
     recordResult,
@@ -267,10 +268,19 @@ export function AutoBetPanel({
         {/* Warning */}
         {!isConnected && (
           <div className="flex items-center gap-2 p-2 rounded-lg bg-destructive/10 border border-destructive/30">
-            <AlertTriangle className="h-4 w-4 text-destructive" />
+            <AlertTriangle className="h-4 w-4 text-destructive flex-shrink-0" />
             <span className="text-xs text-destructive">
-              Verifique seu token de autenticação
+              {connectionError || 'Clique em atualizar saldo para conectar'}
             </span>
+          </div>
+        )}
+
+        {/* Debug Info - remove after testing */}
+        {config.enabled && (
+          <div className="p-2 rounded-lg bg-muted/30 border border-border/50 text-xs text-muted-foreground">
+            <p>Estado: {predictionState}</p>
+            <p>Sinal: {currentPrediction?.predictedColor || 'Nenhum'}</p>
+            <p>Gale: {galeLevel}/{config.maxGales}</p>
           </div>
         )}
 
