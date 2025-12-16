@@ -159,6 +159,12 @@
       
       // Classe geral do display
       timerDisplayEl.className = 'bap-timer-display ' + timerData.phaseClass;
+      
+      // Broadcast timer data to app (throttled - every 500ms)
+      if (!updateTimerDisplay.lastBroadcast || Date.now() - updateTimerDisplay.lastBroadcast > 500) {
+        broadcastTimerData(timerData);
+        updateTimerDisplay.lastBroadcast = Date.now();
+      }
     } else {
       timerValueEl.textContent = '--';
       timerValueEl.className = 'bap-timer-value';
@@ -470,16 +476,69 @@
     log(`🎯 Resultado:`, result);
     addLog(`🎯 ${result.color?.toUpperCase() || '?'} ${result.number !== null ? `(${result.number})` : ''}`);
     
+    // Notificar background script
     try {
       chrome.runtime.sendMessage({ type: 'NEW_RESULT', data: result });
     } catch (e) {}
     
+    // Salvar no localStorage para o app
     try {
       const key = 'blaze-latest-results';
       const existing = JSON.parse(localStorage.getItem(key) || '[]');
       existing.unshift({ ...result, timestamp: Date.now() });
       localStorage.setItem(key, JSON.stringify(existing.slice(0, 20)));
     } catch (e) {}
+    
+    // Enviar via postMessage para o app
+    window.postMessage({ type: 'NEW_RESULT', data: result }, '*');
+    
+    // Enviar via BroadcastChannel
+    try {
+      const channel = new BroadcastChannel('blaze-auto-bet');
+      channel.postMessage({ type: 'NEW_RESULT', data: result });
+      setTimeout(() => channel.close(), 100);
+    } catch (e) {}
+  }
+  
+  // Broadcast extension status to app
+  function broadcastExtensionStatus() {
+    const status = {
+      isEnabled,
+      connectionStatus,
+      currentColor,
+      currentBetAmount,
+      isBettingOpen: isBettingOpen(),
+      timestamp: Date.now()
+    };
+    
+    // Save to localStorage
+    try {
+      localStorage.setItem('blaze-extension-status', JSON.stringify(status));
+    } catch (e) {}
+    
+    // Send via postMessage
+    window.postMessage({ type: 'EXTENSION_STATUS', data: status }, '*');
+    
+    // Send via BroadcastChannel
+    try {
+      const channel = new BroadcastChannel('blaze-auto-bet');
+      channel.postMessage({ type: 'EXTENSION_STATUS', data: status });
+      setTimeout(() => channel.close(), 100);
+    } catch (e) {}
+    
+    log('📤 Status broadcast:', status);
+  }
+  
+  // Broadcast timer data to app
+  function broadcastTimerData(timerData) {
+    const data = {
+      phase: timerData.phase,
+      timeLeft: timerData.seconds,
+      phaseText: timerData.phaseText,
+      timestamp: Date.now()
+    };
+    
+    window.postMessage({ type: 'TIMER_UPDATE', data }, '*');
   }
   
   function detectResultFromElement(element) {
@@ -696,6 +755,9 @@
     
     // Salvar estado
     chrome.storage.local.set({ isEnabled });
+    
+    // Broadcast status change to app
+    broadcastExtensionStatus();
   }
 
   function updateStatus(status, nextBet, amount) {
@@ -1127,6 +1189,12 @@
       addLog('📡 Sinal via postMessage');
       processSignal(event.data.data);
     }
+    
+    // Respond to status requests from the app
+    if (event.data && event.data.type === 'GET_EXTENSION_STATUS') {
+      log('📨 Status request recebido');
+      broadcastExtensionStatus();
+    }
   }
 
   function checkForLocalStorageSignals() {
@@ -1269,6 +1337,10 @@
       if (event.data && event.data.type === 'BET_SIGNAL') {
         addLog('📡 Sinal via BroadcastChannel');
         processSignal(event.data.data);
+      }
+      if (event.data && event.data.type === 'GET_STATUS') {
+        log('📡 Status request via BroadcastChannel');
+        broadcastExtensionStatus();
       }
     };
     log('✅ BroadcastChannel configurado');
