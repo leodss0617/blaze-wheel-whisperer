@@ -1,5 +1,6 @@
 import { useBlazeData } from '@/hooks/useBlazeData';
 import { useWhiteProtectionAI } from '@/hooks/useWhiteProtectionAI';
+import { useAlertSound } from '@/hooks/useAlertSound';
 import { ConnectionPanel } from '@/components/ConnectionPanel';
 import { LiveWheel } from '@/components/LiveWheel';
 import { HistoryPanel } from '@/components/HistoryPanel';
@@ -17,7 +18,7 @@ import { AutoBetPanel } from '@/components/AutoBetPanel';
 import { SettingsPanel } from '@/components/SettingsPanel';
 import { ExtensionPanel } from '@/components/ExtensionPanel';
 import { Flame, Brain, Activity, BarChart3, Wallet, Target, Download, Bot, Settings } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
@@ -60,12 +61,26 @@ const Index = () => {
     analyzeWhiteProtection,
   } = useWhiteProtectionAI();
 
+  // Alert sounds
+  const { playWhiteProtectionSound } = useAlertSound();
+  const lastProtectionId = useRef<string | null>(null);
+
   // Analyze white protection when rounds change
   useEffect(() => {
     if (rounds.length >= 20 && connectionStatus === 'connected') {
       analyzeWhiteProtection(rounds, baseBet);
     }
   }, [rounds, baseBet, connectionStatus, analyzeWhiteProtection]);
+
+  // Play sound when new protection recommendation comes in
+  useEffect(() => {
+    if (currentProtection && 
+        currentProtection.shouldProtect && 
+        currentProtection.id !== lastProtectionId.current) {
+      lastProtectionId.current = currentProtection.id;
+      playWhiteProtectionSound(currentProtection.confidence);
+    }
+  }, [currentProtection, playWhiteProtectionSound]);
 
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const navigate = useNavigate();
