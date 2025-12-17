@@ -149,7 +149,8 @@ export function useAIPrediction() {
       console.log('AI Prediction received:', prediction);
       console.log('Patterns identified:', patterns);
 
-      if (prediction.should_bet && prediction.confidence >= 70) {
+      // Lowered threshold from 70% to 60% for more signals
+      if (prediction.should_bet && prediction.confidence >= 60) {
         const isHighConfidence = prediction.confidence >= 80;
         playAlertSound(isHighConfidence);
 
