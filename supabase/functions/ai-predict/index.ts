@@ -335,21 +335,67 @@ Responda APENAS em JSON válido com este formato:
     });
 
     if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: 'Rate limit exceeded. Try again later.' }), {
-          status: 429,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: 'Payment required. Add credits to continue.' }), {
-          status: 402,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
       const errorText = await response.text();
       console.error('AI Gateway error:', response.status, errorText);
-      throw new Error(`AI Gateway error: ${response.status}`);
+      
+      // Use intelligent fallback instead of returning error
+      console.log('Using fallback prediction system...');
+      
+      let fallbackPrediction;
+      if (learnedPrediction && learnedPrediction.confidence > 50) {
+        fallbackPrediction = {
+          predicted_color: learnedPrediction.prediction,
+          confidence: Math.min(75, learnedPrediction.confidence),
+          reason: `Previsão baseada em ${learnedPrediction.basedOn} padrões aprendidos`,
+          analysis: 'Sistema de aprendizado local ativo',
+          protections: 2,
+          should_bet: true,
+          patterns_used: ['learned_patterns']
+        };
+      } else {
+        // Statistical fallback
+        const dominant = last20Stats.red > last20Stats.black ? 'black' : 'red';
+        const streakFactor = currentStreak.count >= 3 ? 
+          (currentStreak.color === 'red' ? 'black' : 'red') : dominant;
+        
+        fallbackPrediction = {
+          predicted_color: currentStreak.count >= 4 ? streakFactor : dominant,
+          confidence: 65 + Math.min(10, currentStreak.count * 2),
+          reason: currentStreak.count >= 3 ? 
+            `Sequência de ${currentStreak.count}x ${currentStreak.color} - inversão provável` :
+            `Análise estatística: ${last20Stats.red > last20Stats.black ? 'Vermelho' : 'Preto'} dominante`,
+          analysis: 'Sistema de análise estatística ativo',
+          protections: 2,
+          should_bet: true,
+          patterns_used: ['statistical_analysis', 'streak_pattern']
+        };
+      }
+      
+      const lastRound = recentRounds && recentRounds.length > 0 ? {
+        number: recentRounds[0].number,
+        color: recentRounds[0].color,
+        blaze_id: recentRounds[0].blaze_id,
+        uniqueKey: roundIdentifiers[0]?.uniqueKey
+      } : null;
+      
+      return new Response(JSON.stringify({
+        prediction: fallbackPrediction,
+        lastRound,
+        currentPatterns: currentPatterns.map(p => ({ type: p.type, key: p.key })),
+        learnedPrediction,
+        stats: {
+          last20Stats,
+          last50Stats,
+          currentStreak,
+          winRate,
+          totalSignals: completedSignals.length,
+          learnedPatternsCount: (learnedPatterns || []).length,
+          matchedPatternsCount: matchedLearnedPatterns.length
+        },
+        fallbackMode: true
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     const aiData = await response.json();
