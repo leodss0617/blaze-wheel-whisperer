@@ -694,44 +694,86 @@
   function getBettingStatus() {
     const result = { open: false, phase: 'unknown', timeLeft: null };
     
-    // Verificar fases do jogo
-    const phases = {
-      waiting: ['aguardando', 'waiting', 'faça sua aposta', 'place your bet', 'apostas abertas', 'bet now'],
-      rolling: ['girando', 'rolling', 'em andamento', 'spinning'],
-      complete: ['complete', 'resultado', 'result']
-    };
-    
+    // Verificar texto da página de forma mais abrangente
     const pageText = (document.body.innerText || '').toLowerCase();
     
-    for (const [phase, keywords] of Object.entries(phases)) {
-      if (keywords.some(k => pageText.includes(k))) {
-        result.phase = phase;
-        result.open = phase === 'waiting';
-        break;
-      }
+    // Verificar fases do jogo - ordem importa (girando tem prioridade)
+    if (pageText.includes('girando') || pageText.includes('rolling') || 
+        pageText.includes('spinning') || pageText.includes('em andamento')) {
+      result.phase = 'rolling';
+      result.open = false;
+      log('📊 Status: GIRANDO - apostas fechadas');
+      return result;
     }
     
-    // Verificar timer
-    const timerEl = document.querySelector('[class*="timer"], [class*="countdown"]');
-    if (timerEl) {
-      const timeText = timerEl.textContent?.trim();
-      if (timeText) {
-        result.timeLeft = timeText;
-        // Se tem timer visível, provavelmente apostas estão abertas
-        const seconds = parseFloat(timeText);
-        if (!isNaN(seconds) && seconds > 0) {
-          result.open = true;
-          result.phase = 'waiting';
+    // Verificar se apostas estão abertas
+    const bettingKeywords = [
+      'apostas abertas', 'faça sua aposta', 'place your bet', 
+      'aguardando apostas', 'bet now', 'waiting for bets',
+      'girando em', 'rolling in' // Timer de contagem indica apostas abertas
+    ];
+    
+    if (bettingKeywords.some(k => pageText.includes(k))) {
+      result.phase = 'waiting';
+      result.open = true;
+    }
+    
+    // Verificar timer - se existe timer com segundos > 0, apostas abertas
+    const timerSelectors = [
+      '[class*="time-left"]',
+      '[class*="timer"]',
+      '[class*="countdown"]',
+      '.roulette-timer',
+      '[class*="progress"]'
+    ];
+    
+    for (const selector of timerSelectors) {
+      const timerEl = document.querySelector(selector);
+      if (timerEl && timerEl.offsetParent !== null) {
+        const timeText = timerEl.textContent?.trim();
+        if (timeText) {
+          result.timeLeft = timeText;
+          // Extrair segundos do texto
+          const numMatch = timeText.match(/(\d+)/);
+          if (numMatch) {
+            const seconds = parseInt(numMatch[1]);
+            if (seconds > 0 && seconds <= 30) {
+              result.open = true;
+              result.phase = 'waiting';
+              log(`📊 Timer detectado: ${seconds}s - apostas ABERTAS`);
+              break;
+            }
+          }
         }
       }
     }
     
-    // Verificar se botões de cor estão habilitados
-    const colorBtn = document.querySelector('[class*="red"], [class*="black"]');
-    if (colorBtn && !colorBtn.classList.contains('disabled') && !colorBtn.hasAttribute('disabled')) {
-      result.open = true;
+    // Verificar se botões de cor estão visíveis e clicáveis
+    const colorButtons = document.querySelectorAll('[class*="red"], [class*="black"], [class*="color"]');
+    for (const btn of colorButtons) {
+      if (btn.offsetParent !== null && 
+          !btn.classList.contains('disabled') && 
+          !btn.hasAttribute('disabled') &&
+          !btn.className.toLowerCase().includes('history')) {
+        // Verificar se é um botão de aposta (não histórico)
+        const parent = btn.closest('[class*="bet"], [class*="form"], [class*="action"]');
+        if (parent || btn.className.toLowerCase().includes('bet') || 
+            btn.className.toLowerCase().includes('button')) {
+          result.open = true;
+          log('📊 Botão de cor encontrado e habilitado - apostas ABERTAS');
+          break;
+        }
+      }
     }
     
+    // Verificar se input de valor está habilitado
+    const betInput = getBetInput();
+    if (betInput && !betInput.disabled && betInput.offsetParent !== null) {
+      result.open = true;
+      log('📊 Input de aposta encontrado - apostas ABERTAS');
+    }
+    
+    log(`📊 Status final: ${result.open ? 'ABERTAS' : 'FECHADAS'} (fase: ${result.phase})`);
     return result;
   }
 
@@ -1044,6 +1086,7 @@
   async function placeBet(color, amount) {
     const colorLabel = color === 'red' ? 'VERMELHO' : color === 'black' ? 'PRETO' : 'BRANCO';
     log(`🎲 Iniciando aposta: ${colorLabel} R$ ${amount}`);
+    addLog(`🎲 Tentando: ${colorLabel} R$ ${amount.toFixed(2)}`);
     
     const now = Date.now();
     if (now - lastBetTime < CONFIG.minBetInterval) {
@@ -1053,65 +1096,93 @@
       return false;
     }
 
-    if (!isBettingOpen()) {
-      addLog('⚠️ Apostas fechadas, aguardando...');
-      return false;
-    }
-
-    addLog(`🎯 Apostando R$ ${amount.toFixed(2)} no ${colorLabel}${color === 'white' ? ' (proteção)' : ''}...`);
+    // Debug current page state
+    log('📊 Estado da página:');
+    log('  - URL:', window.location.href);
+    log('  - Apostas abertas:', isBettingOpen());
 
     try {
-      // 1. Definir valor da aposta
-      const betInput = getBetInput();
-      if (betInput) {
-        log('  Definindo valor no input...');
-        betInput.focus();
-        betInput.value = '';
-        
-        // Simular digitação
-        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-        nativeInputValueSetter.call(betInput, amount.toString());
-        betInput.dispatchEvent(new Event('input', { bubbles: true }));
-        betInput.dispatchEvent(new Event('change', { bubbles: true }));
-        betInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
-        
-        log('  ✅ Valor definido:', amount);
-        await sleep(300);
-      } else {
-        warn('  ⚠️ Input de valor não encontrado, continuando...');
-      }
-
-      // 2. Clicar no botão da cor
+      // 1. Encontrar e clicar no botão da cor PRIMEIRO
+      log('  1️⃣ Procurando botão de cor...');
       const colorButton = getColorButton(color);
       if (!colorButton) {
-        addLog('❌ Botão de cor não encontrado');
+        addLog('❌ Botão de cor não encontrado - Debug UI para verificar');
         error('  ❌ Botão de cor não encontrado!');
+        debugUI(); // Auto-debug for troubleshooting
         return false;
       }
 
-      log('  Clicando no botão de cor...');
-      colorButton.click();
-      colorButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await sleep(400);
+      log(`  ✅ Botão ${color} encontrado:`, colorButton.className);
       
-      // 3. Confirmar aposta (se necessário)
+      // Clicar no botão de cor para selecionar
+      log('  2️⃣ Clicando no botão de cor...');
+      colorButton.click();
+      colorButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      await sleep(500);
+      addLog(`✅ Cor ${colorLabel} selecionada`);
+
+      // 2. Definir valor da aposta
+      log('  3️⃣ Procurando input de valor...');
+      const betInput = getBetInput();
+      if (betInput) {
+        log('  Definindo valor no input:', amount);
+        
+        // Limpar e focar
+        betInput.focus();
+        betInput.select();
+        await sleep(100);
+        
+        // Método 1: Native setter
+        try {
+          const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+          nativeInputValueSetter.call(betInput, amount.toString());
+        } catch (e) {
+          betInput.value = amount.toString();
+        }
+        
+        // Disparar eventos para o React detectar a mudança
+        betInput.dispatchEvent(new Event('input', { bubbles: true }));
+        betInput.dispatchEvent(new Event('change', { bubbles: true }));
+        betInput.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
+        betInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
+        
+        log('  ✅ Valor definido:', betInput.value);
+        addLog(`✅ Valor: R$ ${amount.toFixed(2)}`);
+        await sleep(400);
+      } else {
+        warn('  ⚠️ Input de valor não encontrado - usando valor padrão');
+        addLog('⚠️ Input não encontrado - usando padrão');
+      }
+
+      // 3. Confirmar aposta - procurar botão de início/confirmação
+      log('  4️⃣ Procurando botão de confirmação...');
       const confirmButton = getConfirmButton();
-      if (confirmButton && confirmButton !== colorButton) {
-        log('  Clicando no botão de confirmação...');
+      if (confirmButton) {
+        log('  Clicando no botão de confirmação:', confirmButton.textContent?.trim());
         confirmButton.click();
+        confirmButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        await sleep(300);
+        addLog('✅ Confirmação clicada');
+      } else {
+        // Tentar clicar novamente no botão de cor (alguns sites confirmam assim)
+        log('  ℹ️ Sem botão de confirmação - clicando cor novamente');
+        colorButton.click();
         await sleep(300);
       }
 
       lastBetTime = now;
-      const successLabel = color === 'red' ? 'VERMELHO' : color === 'black' ? 'PRETO' : 'BRANCO';
-      addLog(`✅ Aposta realizada: R$ ${amount.toFixed(2)} no ${successLabel}${color === 'white' ? ' (proteção)' : ''}`);
+      addLog(`✅ APOSTA: R$ ${amount.toFixed(2)} no ${colorLabel}${color === 'white' ? ' (proteção)' : ''}`);
       log('  ✅ Aposta concluída com sucesso!');
       
       // Notificar background script
-      chrome.runtime.sendMessage({
-        type: 'BET_PLACED',
-        data: { color, amount, timestamp: now }
-      });
+      try {
+        chrome.runtime.sendMessage({
+          type: 'BET_PLACED',
+          data: { color, amount, timestamp: now }
+        });
+      } catch (e) {
+        log('  ⚠️ Não foi possível notificar background:', e);
+      }
 
       return true;
     } catch (err) {
@@ -1257,12 +1328,14 @@
   async function processSignal(signal) {
     if (!isEnabled) {
       log('⛔ Automação desativada, ignorando sinal');
+      addLog('⛔ Automação OFF - ative para apostar');
       return;
     }
     
     // Accept red, black, or white (for protection)
     if (!signal.color || !['red', 'black', 'white'].includes(signal.color)) {
       warn('⚠️ Sinal inválido, cor não especificada:', signal);
+      addLog('⚠️ Sinal inválido recebido');
       return;
     }
     
@@ -1275,22 +1348,48 @@
     const isProtection = signal.isWhiteProtection || signal.color === 'white';
     
     updateStatus('Conectado', colorLabel, currentBetAmount);
-    addLog(`📡 ${isProtection ? '⚪ PROTEÇÃO: ' : 'Sinal: '}${colorLabel} R$${currentBetAmount} (${signal.confidence || '?'}%)`);
+    addLog(`📡 ${isProtection ? '⚪ PROTEÇÃO: ' : 'Sinal: '}${colorLabel} R$${currentBetAmount.toFixed(2)} (${signal.confidence || '?'}%)`);
     
     if (!isWaitingToBet) {
       isWaitingToBet = true;
       
-      // Tentar apostar
-      const success = await placeBet(signal.color, currentBetAmount);
+      // Verificar se apostas estão abertas
+      let bettingStatus = getBettingStatus();
+      let attempts = 0;
+      const maxAttempts = 10;
       
-      if (!success) {
-        // Tentar novamente após um delay
-        log('  Tentando novamente em 2s...');
-        await sleep(2000);
-        await placeBet(signal.color, currentBetAmount);
+      // Aguardar apostas abrirem se necessário
+      while (!bettingStatus.open && attempts < maxAttempts) {
+        log(`⏳ Apostas fechadas, aguardando... (tentativa ${attempts + 1}/${maxAttempts})`);
+        addLog(`⏳ Aguardando apostas abrirem... (${attempts + 1}/${maxAttempts})`);
+        await sleep(1500);
+        bettingStatus = getBettingStatus();
+        attempts++;
+      }
+      
+      if (bettingStatus.open) {
+        // Tentar apostar
+        const success = await placeBet(signal.color, currentBetAmount);
+        
+        if (!success) {
+          // Tentar novamente após um delay
+          log('  Primeira tentativa falhou, tentando novamente em 1.5s...');
+          addLog('🔄 Tentando novamente...');
+          await sleep(1500);
+          const retry = await placeBet(signal.color, currentBetAmount);
+          if (!retry) {
+            addLog('❌ Falha ao apostar - verifique o valor');
+          }
+        }
+      } else {
+        addLog('⚠️ Apostas não abriram a tempo');
+        log('⚠️ Tempo limite excedido esperando apostas abrirem');
       }
       
       isWaitingToBet = false;
+    } else {
+      log('⏸️ Já aguardando para apostar');
+      addLog('⏸️ Aposta em andamento...');
     }
   }
 
