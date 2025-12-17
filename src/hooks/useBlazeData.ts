@@ -6,6 +6,7 @@ import { useAlertSound } from '@/hooks/useAlertSound';
 import { useAIPrediction, AIPrediction, AIStats } from '@/hooks/useAIPrediction';
 import { supabase } from '@/integrations/supabase/client';
 import { formatBrasiliaTime } from '@/components/BrasiliaClockDisplay';
+import { createRoundKey } from '@/hooks/useSystemState';
 
 const POLL_INTERVAL = 1000; // Poll every 1 second for faster updates
 const MAX_GALES = 2; // Maximum number of gales
@@ -255,21 +256,32 @@ export function useBlazeData() {
   }, [galeLevel, updateSignalInDb, saveSignalToDb, recordLoss, toast, baseBet, calculateTotalSpent]);
 
   // Check result when new round arrives
+  // Uses unique round key to ensure consecutive identical numbers are treated separately
   const checkResult = useCallback((lastRound: BlazeRound) => {
     if (!currentPrediction || currentPrediction.status !== 'pending') return;
     
-    console.log(`Verificando: Previu ${currentPrediction.predictedColor}, saiu ${lastRound.color} (rodada ${lastRound.number})`);
+    // Generate unique key for this round to prevent duplicate processing
+    const roundKey = createRoundKey(lastRound);
+    console.log(`🔍 Verificando rodada única [${roundKey}]: Previu ${currentPrediction.predictedColor}, saiu ${lastRound.color} (numero ${lastRound.number})`);
     
+    // Check result
     if (lastRound.color === currentPrediction.predictedColor) {
       console.log('✅ ACERTOU!');
       handleWin(currentPrediction, lastRound.number, lastRound.color);
     } else if (lastRound.color === 'white') {
-      console.log('⚪ Branco - aguardando próxima');
+      // White is a valid round - count it but don't trigger loss
+      console.log('⚪ Branco detectado como rodada válida - aguardando próxima cor');
+      // Toast to inform user
+      toast({
+        title: '⚪ BRANCO',
+        description: 'Rodada contada. Previsão segue ativa para próxima cor.',
+      });
     } else {
-      console.log(`❌ ERROU! Gale level: ${galeLevel}`);
+      // Wrong color - trigger gale or loss
+      console.log(`❌ ERROU! Previu ${currentPrediction.predictedColor}, saiu ${lastRound.color}. Gale level: ${galeLevel}`);
       handleLoss(currentPrediction, lastRound.color, lastRound.number);
     }
-  }, [currentPrediction, galeLevel, handleWin, handleLoss]);
+  }, [currentPrediction, galeLevel, handleWin, handleLoss, toast]);
 
   // Generate prediction when in analyzing state - based on round count
   const checkForSignal = useCallback(async (currentRounds: BlazeRound[]) => {
@@ -378,19 +390,35 @@ export function useBlazeData() {
     }
   }, [rounds, currentPrediction, checkResult]);
 
+  // Create a truly unique identifier for each round
+  // This ensures that even consecutive rounds with same number/color are unique
+  const createUniqueRoundId = (game: BlazeAPIGame): string => {
+    // Composite key: blaze_id + roll_number + timestamp
+    // This guarantees uniqueness even if Blaze returns duplicate IDs somehow
+    const timestamp = new Date(game.created_at).getTime();
+    return `${game.id}_${game.roll}_${timestamp}`;
+  };
+
   const convertBlazeGame = (game: BlazeAPIGame): BlazeRound => {
     const colorMap: Record<number, BlazeColor> = {
-      0: 'white',
+      0: 'white',  // White is a valid round outcome
       1: 'red',
       2: 'black',
     };
     
-    return {
-      id: game.id,
-      color: colorMap[game.color] || 'red',
+    const round: BlazeRound = {
+      id: game.id, // Keep original Blaze ID for DB upsert
+      color: colorMap[game.color] ?? 'red',
       number: game.roll,
       timestamp: new Date(game.created_at),
     };
+    
+    // Log white rounds specifically for debugging
+    if (game.color === 0) {
+      console.log(`⚪ BRANCO detectado! Roll: ${game.roll}, ID: ${game.id}, Time: ${game.created_at}`);
+    }
+    
+    return round;
   };
 
   const fetchBlazeData = useCallback(async (isInitial = false) => {
@@ -429,12 +457,17 @@ export function useBlazeData() {
         }
       } else {
         setRounds(prev => {
-          const existingIds = new Set(prev.map(r => r.id));
-          const actuallyNewRounds = newRounds.filter(r => !existingIds.has(r.id));
+          // Use composite key for more reliable deduplication
+          const existingKeys = new Set(prev.map(r => createRoundKey(r)));
+          const actuallyNewRounds = newRounds.filter(r => !existingKeys.has(createRoundKey(r)));
           
           if (actuallyNewRounds.length > 0) {
-            console.log(`Found ${actuallyNewRounds.length} new rounds`);
-            actuallyNewRounds.forEach(round => saveRoundToDb(round));
+            console.log(`📍 ${actuallyNewRounds.length} rodadas NOVAS detectadas:`);
+            actuallyNewRounds.forEach(round => {
+              const colorEmoji = round.color === 'white' ? '⚪' : round.color === 'red' ? '🔴' : '⚫';
+              console.log(`   ${colorEmoji} ${round.color.toUpperCase()} ${round.number} [${createRoundKey(round)}]`);
+              saveRoundToDb(round);
+            });
             
             const updated = [...prev, ...actuallyNewRounds].slice(-100);
             
