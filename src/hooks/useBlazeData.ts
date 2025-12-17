@@ -28,11 +28,15 @@ export function useBlazeData() {
   const [useAI, setUseAI] = useState(true);
   const [predictionInterval, setPredictionIntervalState] = useState(() => {
     const saved = localStorage.getItem('blaze-prediction-interval');
-    return saved ? parseInt(saved, 10) : 2; // Default 2 rounds
+    return saved ? parseInt(saved, 10) : 5; // Default 5 rounds (increased from 2)
   });
   
   // Track the round number when the last prediction cycle completed
   const lastCompletedRoundNumber = useRef<number | null>(null);
+  
+  // Minimum time between predictions (prevents spam)
+  const lastPredictionTime = useRef<number>(0);
+  const MIN_PREDICTION_INTERVAL_MS = 30000; // 30 seconds minimum
   
   // State for showing rounds remaining until next prediction
   const [roundsUntilNextPrediction, setRoundsUntilNextPrediction] = useState<number>(0);
@@ -269,10 +273,11 @@ export function useBlazeData() {
 
   // Generate prediction when in analyzing state - based on round count
   const checkForSignal = useCallback(async (currentRounds: BlazeRound[]) => {
-    if (currentRounds.length < 5) return;
+    if (currentRounds.length < 10) return; // Need at least 10 rounds for better analysis
     
     const lastRound = currentRounds[currentRounds.length - 1];
     const currentRoundNumber = lastRound.number;
+    const now = Date.now();
     
     // Calculate rounds until next prediction
     let roundsRemaining = 0;
@@ -284,14 +289,37 @@ export function useBlazeData() {
     }
     setRoundsUntilNextPrediction(roundsRemaining);
     
-    // Guards
-    if (predictionState !== 'analyzing') return;
-    if (waitingForResult.current) return;
-    if (isGeneratingPrediction.current) return;
-    if (!isFirstPrediction && roundsRemaining > 0) return;
+    // Guards - be more strict to prevent spam
+    if (predictionState !== 'analyzing') {
+      console.log('⏸️ Não analisando - estado:', predictionState);
+      return;
+    }
+    if (waitingForResult.current) {
+      console.log('⏸️ Aguardando resultado');
+      return;
+    }
+    if (isGeneratingPrediction.current) {
+      console.log('⏸️ Já gerando previsão');
+      return;
+    }
+    
+    // Round interval check
+    if (!isFirstPrediction && roundsRemaining > 0) {
+      console.log(`⏸️ Aguardando ${roundsRemaining} rodadas para próxima previsão`);
+      return;
+    }
+    
+    // Time-based guard (minimum 30 seconds between predictions)
+    const timeSinceLastPrediction = now - lastPredictionTime.current;
+    if (lastPredictionTime.current > 0 && timeSinceLastPrediction < MIN_PREDICTION_INTERVAL_MS) {
+      const secondsRemaining = Math.ceil((MIN_PREDICTION_INTERVAL_MS - timeSinceLastPrediction) / 1000);
+      console.log(`⏸️ Aguardando ${secondsRemaining}s (intervalo mínimo)`);
+      return;
+    }
     
     // Lock and generate
     isGeneratingPrediction.current = true;
+    lastPredictionTime.current = now;
     console.log('🎯 Gerando previsão para próxima rodada...');
     
     try {
@@ -318,10 +346,15 @@ export function useBlazeData() {
           });
           
           console.log(`Previsão feita na rodada ${currentRoundNumber}, aguardando próxima rodada...`);
+        } else {
+          // AI didn't return a signal - don't spam
+          console.log('⏸️ IA não retornou sinal - aguardando melhor oportunidade');
         }
       }
     } catch (error) {
       console.error('Erro ao gerar previsão:', error);
+      // Reset time on error to allow retry
+      lastPredictionTime.current = now - MIN_PREDICTION_INTERVAL_MS + 10000; // Allow retry in 10s
     } finally {
       isGeneratingPrediction.current = false;
     }
