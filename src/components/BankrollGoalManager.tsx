@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { 
   Target, 
   TrendingUp, 
@@ -15,27 +16,79 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
-  BarChart3
+  BarChart3,
+  Zap,
+  Settings2,
+  Play,
+  Pause,
+  Calculator
 } from 'lucide-react';
 import { useBankrollGoal, type BankrollGoal } from '@/hooks/useBankrollGoal';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { BankrollProgressChart } from './BankrollProgressChart';
+import { useExtensionBridge } from '@/hooks/useExtensionBridge';
 
 interface BankrollGoalManagerProps {
   currentProfit: number;
   currentBankroll: number;
+  onBettingConfigChange?: (config: {
+    baseBet: number;
+    maxGales: number;
+    dailyTarget: number;
+    dailyLossLimit: number;
+    stopOnTarget: boolean;
+    stopOnLoss: boolean;
+  }) => void;
 }
 
-export function BankrollGoalManager({ currentProfit, currentBankroll }: BankrollGoalManagerProps) {
-  const { goal, dailyProgress, setNewGoal, clearGoal, getTodayProgress, isGoalAchievable } = useBankrollGoal(currentProfit);
+export function BankrollGoalManager({ currentProfit, currentBankroll, onBettingConfigChange }: BankrollGoalManagerProps) {
+  const { 
+    goal, 
+    dailyProgress, 
+    bettingConfig,
+    setNewGoal, 
+    clearGoal, 
+    getTodayProgress, 
+    isGoalAchievable,
+    updateBettingConfig,
+    calculateRecommendedBet,
+    calculateMartingaleBet,
+    getTotalCycleCost,
+  } = useBankrollGoal(currentProfit);
+  
+  const { isConnected, sendSignalToExtension } = useExtensionBridge();
+  
   const [showChart, setShowChart] = useState(false);
+  const [showBettingConfig, setShowBettingConfig] = useState(false);
   const [isSettingGoal, setIsSettingGoal] = useState(!goal);
   const [isExpanded, setIsExpanded] = useState(true);
+  const [automationEnabled, setAutomationEnabled] = useState(() => {
+    return localStorage.getItem('blaze-goal-automation') === 'true';
+  });
   
   // Form state
   const [formBankroll, setFormBankroll] = useState(currentBankroll.toString());
   const [formTarget, setFormTarget] = useState('');
   const [formDays, setFormDays] = useState('30');
+
+  // Notify parent of config changes
+  useEffect(() => {
+    if (goal && onBettingConfigChange) {
+      onBettingConfigChange({
+        baseBet: bettingConfig.baseBet,
+        maxGales: bettingConfig.maxGales,
+        dailyTarget: goal.dailyTarget,
+        dailyLossLimit: bettingConfig.dailyLossLimit,
+        stopOnTarget: bettingConfig.stopOnTarget,
+        stopOnLoss: bettingConfig.stopOnLoss,
+      });
+    }
+  }, [goal, bettingConfig, onBettingConfigChange]);
+
+  // Save automation state
+  useEffect(() => {
+    localStorage.setItem('blaze-goal-automation', automationEnabled.toString());
+  }, [automationEnabled]);
 
   const handleSetGoal = () => {
     const bankroll = parseFloat(formBankroll) || 0;
@@ -50,6 +103,8 @@ export function BankrollGoalManager({ currentProfit, currentBankroll }: Bankroll
 
   const todayProgress = getTodayProgress();
   const todayRemaining = goal ? Math.max(0, goal.dailyTarget - currentProfit) : 0;
+  const recommendedBet = goal ? calculateRecommendedBet(goal.dailyTarget, bettingConfig.maxGales) : 2;
+  const cycleCost = getTotalCycleCost();
 
   const formatDate = (date: Date) => {
     return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
@@ -57,6 +112,10 @@ export function BankrollGoalManager({ currentProfit, currentBankroll }: Bankroll
 
   const formatCurrency = (value: number) => {
     return `R$ ${value.toFixed(2)}`;
+  };
+
+  const toggleAutomation = () => {
+    setAutomationEnabled(!automationEnabled);
   };
 
   return (
@@ -263,6 +322,123 @@ export function BankrollGoalManager({ currentProfit, currentBankroll }: Bankroll
                   />
                 )}
 
+                {/* Betting Configuration Toggle */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs"
+                  onClick={() => setShowBettingConfig(!showBettingConfig)}
+                >
+                  <Settings2 className="h-3 w-3 mr-1" />
+                  {showBettingConfig ? 'Ocultar Config Apostas' : 'Configurar Apostas'}
+                </Button>
+
+                {/* Betting Configuration Panel */}
+                {showBettingConfig && (
+                  <div className="p-3 rounded-lg bg-muted/30 border border-border/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium flex items-center gap-1">
+                        <Zap className="h-3 w-3 text-primary" />
+                        Automação
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] ${isConnected ? 'text-green-400' : 'text-muted-foreground'}`}>
+                          {isConnected ? 'Extensão Conectada' : 'Extensão Offline'}
+                        </span>
+                        <Switch
+                          checked={automationEnabled}
+                          onCheckedChange={toggleAutomation}
+                          disabled={!isConnected}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[10px]">Aposta Base (R$)</Label>
+                        <Input
+                          type="number"
+                          value={bettingConfig.baseBet}
+                          onChange={(e) => updateBettingConfig({ baseBet: parseFloat(e.target.value) || 0 })}
+                          className="h-7 text-xs"
+                          step="0.5"
+                        />
+                        <p className="text-[9px] text-muted-foreground">
+                          Recomendado: {formatCurrency(recommendedBet)}
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[10px]">Máx Gales</Label>
+                        <Input
+                          type="number"
+                          value={bettingConfig.maxGales}
+                          onChange={(e) => updateBettingConfig({ maxGales: parseInt(e.target.value) || 0 })}
+                          className="h-7 text-xs"
+                          min="0"
+                          max="3"
+                        />
+                        <p className="text-[9px] text-muted-foreground">
+                          Custo ciclo: {formatCurrency(cycleCost)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-[10px]">Limite Perda Diária (R$)</Label>
+                      <Input
+                        type="number"
+                        value={bettingConfig.dailyLossLimit}
+                        onChange={(e) => updateBettingConfig({ dailyLossLimit: parseFloat(e.target.value) || 0 })}
+                        className="h-7 text-xs"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-[10px]">Parar ao atingir meta diária</Label>
+                        <Switch
+                          checked={bettingConfig.stopOnTarget}
+                          onCheckedChange={(checked) => updateBettingConfig({ stopOnTarget: checked })}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <Label className="text-[10px]">Parar ao atingir limite de perda</Label>
+                        <Switch
+                          checked={bettingConfig.stopOnLoss}
+                          onCheckedChange={(checked) => updateBettingConfig({ stopOnLoss: checked })}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Martingale Preview */}
+                    <div className="p-2 rounded bg-background/50 text-[10px] space-y-1">
+                      <p className="font-medium flex items-center gap-1">
+                        <Calculator className="h-3 w-3" />
+                        Progressão Martingale:
+                      </p>
+                      <div className="flex gap-2 flex-wrap">
+                        {Array.from({ length: bettingConfig.maxGales + 1 }, (_, i) => (
+                          <span key={i} className={`px-1.5 py-0.5 rounded ${i === 0 ? 'bg-primary/20' : 'bg-muted'}`}>
+                            {i === 0 ? 'Base' : `G${i}`}: {formatCurrency(calculateMartingaleBet(i))}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {automationEnabled && (
+                      <div className="p-2 rounded bg-green-500/10 border border-green-500/30 text-xs">
+                        <div className="flex items-center gap-1 text-green-400">
+                          <Play className="h-3 w-3" />
+                          <span className="font-medium">Automação Ativa</span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          Extensão executará apostas automaticamente baseado nas previsões da IA.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Actions */}
                 <div className="flex gap-2">
                   <Button 
@@ -271,7 +447,7 @@ export function BankrollGoalManager({ currentProfit, currentBankroll }: Bankroll
                     className="flex-1 text-xs"
                     onClick={() => setIsSettingGoal(true)}
                   >
-                    Editar
+                    Editar Meta
                   </Button>
                   <Button 
                     variant="ghost" 
