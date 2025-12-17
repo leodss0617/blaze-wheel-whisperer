@@ -9,6 +9,7 @@ interface BetRequest {
   action: 'place_bet' | 'check_balance' | 'get_game_status';
   color?: 'red' | 'black'; // 1 = red, 2 = black
   amount?: number;
+  token?: string; // Allow token to be passed in request
 }
 
 interface BlazeResponse {
@@ -26,18 +27,23 @@ serve(async (req) => {
   }
 
   try {
-    const authToken = Deno.env.get('BLAZE_AUTH_TOKEN');
-    
-    if (!authToken) {
-      console.error('BLAZE_AUTH_TOKEN not configured');
-      return new Response(
-        JSON.stringify({ success: false, error: 'Token de autenticação não configurado' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     const body: BetRequest = await req.json();
     console.log('Received request:', body.action);
+
+    // Token can come from request body OR environment variable
+    const authToken = body.token || Deno.env.get('BLAZE_AUTH_TOKEN');
+    
+    if (!authToken) {
+      console.error('No auth token available');
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'Token de autenticação não configurado. Cole seu token JWT nas configurações.',
+          needsToken: true 
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     const baseHeaders = {
       'Accept': 'application/json',

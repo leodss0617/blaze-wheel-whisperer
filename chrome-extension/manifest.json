@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Blaze Auto Bet - Sinais IA",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Extensão para automação de apostas no Blaze Double baseada em sinais de IA",
   "permissions": [
     "storage",
@@ -11,7 +11,9 @@
   "host_permissions": [
     "https://blaze.bet.br/*",
     "https://blaze.com/*",
-    "https://blaze1.space/*"
+    "https://blaze1.space/*",
+    "https://*.lovable.app/*",
+    "https://*.lovable.dev/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -30,6 +32,14 @@
       ],
       "js": ["content.js"],
       "css": ["content.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.lovable.app/*",
+        "https://*.lovable.dev/*"
+      ],
+      "js": ["bridge.js"],
       "run_at": "document_idle"
     }
   ],

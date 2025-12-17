@@ -106,16 +106,31 @@ export function SettingsPanel({
   const checkTokenStatus = useCallback(async () => {
     setIsCheckingToken(true);
     try {
+      // Get saved token from localStorage
+      const savedToken = localStorage.getItem('blaze-jwt-token');
+      
       const { data, error } = await supabase.functions.invoke('blaze-auto-bet', {
-        body: { action: 'check_balance' },
+        body: { 
+          action: 'check_balance',
+          token: savedToken || undefined
+        },
       });
 
       if (error || !data?.success) {
-        setTokenInfo({
-          isValid: false,
-          expiresAt: null,
-          timeRemaining: 'Token inválido',
-        });
+        // Check if we need a token
+        if (data?.needsToken || !savedToken) {
+          setTokenInfo({
+            isValid: false,
+            expiresAt: null,
+            timeRemaining: 'Token necessário',
+          });
+        } else {
+          setTokenInfo({
+            isValid: false,
+            expiresAt: null,
+            timeRemaining: 'Token inválido',
+          });
+        }
         return;
       }
 
@@ -188,7 +203,7 @@ export function SettingsPanel({
   }, [tokenInfo.expiresAt, settings.autoRenewToken, settings.renewWarningMinutes, toast]);
 
   // Update new token
-  const handleTokenUpdate = useCallback(() => {
+  const handleTokenUpdate = useCallback(async () => {
     if (!newToken.trim()) {
       toast({
         title: '❌ Erro',
@@ -208,18 +223,19 @@ export function SettingsPanel({
       return;
     }
 
-    // Save expiry to localStorage
+    // Save token AND expiry to localStorage
+    localStorage.setItem('blaze-jwt-token', newToken);
     localStorage.setItem('blaze-token-expiry', (decoded.exp * 1000).toString());
     
     toast({
       title: '✅ Token salvo!',
-      description: 'Atualize o secret BLAZE_AUTH_TOKEN nas configurações do projeto',
+      description: 'Verificando conexão com Blaze...',
     });
     
-    // Copy to clipboard
-    navigator.clipboard.writeText(newToken);
     setNewToken('');
-    checkTokenStatus();
+    
+    // Immediately verify the new token
+    await checkTokenStatus();
   }, [newToken, decodeToken, toast, checkTokenStatus]);
 
   const updateSetting = (key: string, value: any) => {
