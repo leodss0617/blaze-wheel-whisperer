@@ -80,10 +80,48 @@ export function useAIPrediction() {
         throw new Error(data.error);
       }
 
-      const prediction: AIPrediction = data.prediction;
-      const stats: AIStats = data.stats;
+      const rawPrediction = data.prediction;
+      const stats: AIStats = data.stats || {
+        last20Stats: { red: 0, black: 0, white: 0 },
+        last50Stats: { red: 0, black: 0, white: 0 },
+        currentStreak: { color: '', count: 0 },
+        winRate: '0%',
+        totalSignals: 0,
+        consecutiveLosses: 0,
+        learnedPatternsCount: 0,
+        matchedPatternsCount: 0
+      };
       const lastRound = data.lastRound;
       const patterns = data.currentPatterns || [];
+
+      // Ensure analysis is a string, not an object
+      let analysisStr = '';
+      if (rawPrediction.analysis) {
+        if (typeof rawPrediction.analysis === 'string') {
+          analysisStr = rawPrediction.analysis;
+        } else if (typeof rawPrediction.analysis === 'object') {
+          // Convert analysis object to readable string
+          const a = rawPrediction.analysis;
+          const parts = [];
+          if (a.time) parts.push(`Horário: ${a.time.hour}:${a.time.minute}`);
+          if (a.scores) parts.push(`Scores: R${a.scores.red}/B${a.scores.black}`);
+          if (a.streak) parts.push(`Streak: ${a.streak.count}x ${a.streak.color}`);
+          analysisStr = parts.join(' | ');
+        }
+      }
+
+      // Ensure reason is always a string
+      const reasonStr = typeof rawPrediction.reason === 'string' 
+        ? rawPrediction.reason 
+        : (typeof rawPrediction.reason === 'object' 
+            ? JSON.stringify(rawPrediction.reason) 
+            : 'Análise multi-fator');
+
+      const prediction: AIPrediction = {
+        ...rawPrediction,
+        reason: reasonStr,
+        analysis: analysisStr,
+      };
 
       // Add lastRound and recalibration flag to prediction
       if (lastRound) {
@@ -96,8 +134,8 @@ export function useAIPrediction() {
       setAiStats({ 
         ...stats, 
         consecutiveLosses,
-        learnedPatternsCount: stats.learnedPatternsCount,
-        matchedPatternsCount: stats.matchedPatternsCount
+        learnedPatternsCount: stats?.learnedPatternsCount || 0,
+        matchedPatternsCount: stats?.matchedPatternsCount || 0
       });
       
       if (needsRecalibration) {
