@@ -36,7 +36,6 @@ export function useAutoBet() {
     const saved = localStorage.getItem('autobet-stats');
     if (saved) {
       const parsed = JSON.parse(saved);
-      // Ensure balance is always a number
       return {
         ...parsed,
         balance: typeof parsed.balance === 'number' ? parsed.balance : 0,
@@ -79,7 +78,7 @@ export function useAutoBet() {
     checkBalance();
   }, []);
 
-  // Check balance
+  // Check balance - this can use edge function
   const checkBalance = useCallback(async (): Promise<number | null> => {
     try {
       setIsLoading(true);
@@ -148,7 +147,46 @@ export function useAutoBet() {
     return config.baseBet * Math.pow(2, galeLevel);
   }, [config.baseBet]);
 
-  // Place bet
+  // Send bet signal to Chrome extension via localStorage/postMessage
+  const sendBetToExtension = useCallback((color: 'red' | 'black', amount: number, galeLevel: number): boolean => {
+    const signal = {
+      color,
+      amount,
+      galeLevel,
+      confidence: 100,
+      timestamp: Date.now(),
+      source: 'autobet',
+    };
+
+    console.log('📤 Sending bet signal to extension:', signal);
+
+    try {
+      // Method 1: localStorage (primary)
+      localStorage.setItem('blaze-auto-bet-signal', JSON.stringify(signal));
+      
+      // Method 2: postMessage (for same-origin frames)
+      window.postMessage({ type: 'BET_SIGNAL', data: signal }, '*');
+      
+      // Method 3: BroadcastChannel (for cross-tab communication)
+      try {
+        const channel = new BroadcastChannel('blaze-auto-bet');
+        channel.postMessage({ type: 'BET_SIGNAL', data: signal });
+        setTimeout(() => channel.close(), 100);
+      } catch (e) {
+        console.log('BroadcastChannel not supported');
+      }
+
+      // Method 4: Custom event
+      window.dispatchEvent(new CustomEvent('blaze-bet-signal', { detail: signal }));
+
+      return true;
+    } catch (error) {
+      console.error('Failed to send bet signal:', error);
+      return false;
+    }
+  }, []);
+
+  // Place bet - sends signal to Chrome extension
   const placeBet = useCallback(async (color: 'red' | 'black', galeLevel: number = 0): Promise<boolean> => {
     if (betInProgress.current) {
       console.log('Bet already in progress, skipping...');
@@ -159,26 +197,36 @@ export function useAutoBet() {
     setIsBetting(true);
     
     const amount = calculateBet(galeLevel);
-    console.log(`🎰 Placing bet: R$ ${amount} on ${color} (Gale ${galeLevel})`);
+    console.log(`🎰 Placing bet via extension: R$ ${amount} on ${color} (Gale ${galeLevel})`);
     
     try {
-      const { data, error } = await supabase.functions.invoke('blaze-auto-bet', {
-        body: { action: 'place_bet', color, amount },
-      });
-
-      if (error || !data?.success) {
-        console.error('Bet error:', error || data?.error);
+      // Check if extension is installed
+      const extensionInstalled = localStorage.getItem('blaze-extension-installed') === 'true';
+      
+      if (!extensionInstalled) {
         toast({
-          title: '❌ Erro na aposta',
-          description: data?.error || 'Não foi possível realizar a aposta',
+          title: '⚠️ Extensão não detectada',
+          description: 'Instale a extensão Chrome e abra o Blaze em outra aba',
+          variant: 'destructive',
+        });
+        return false;
+      }
+
+      // Send signal to extension
+      const sent = sendBetToExtension(color, amount, galeLevel);
+      
+      if (!sent) {
+        toast({
+          title: '❌ Erro',
+          description: 'Não foi possível enviar o sinal',
           variant: 'destructive',
         });
         return false;
       }
 
       toast({
-        title: '✅ Aposta realizada!',
-        description: `R$ ${amount.toFixed(2)} no ${color === 'red' ? 'VERMELHO' : 'PRETO'}`,
+        title: '📤 Sinal enviado!',
+        description: `R$ ${amount.toFixed(2)} no ${color === 'red' ? 'VERMELHO' : 'PRETO'} - Gale ${galeLevel}`,
       });
 
       setStats(prev => ({ ...prev, totalBets: prev.totalBets + 1 }));
@@ -187,12 +235,17 @@ export function useAutoBet() {
       return true;
     } catch (error) {
       console.error('Place bet error:', error);
+      toast({
+        title: '❌ Erro',
+        description: 'Falha ao enviar sinal para extensão',
+        variant: 'destructive',
+      });
       return false;
     } finally {
       betInProgress.current = false;
       setIsBetting(false);
     }
-  }, [calculateBet, toast]);
+  }, [calculateBet, toast, sendBetToExtension]);
 
   // Handle prediction signal - AUTO BET
   const handlePrediction = useCallback(async (
@@ -318,6 +371,17 @@ export function useAutoBet() {
         toast({
           title: '❌ Erro',
           description: 'Configure seu token da Blaze primeiro',
+          variant: 'destructive',
+        });
+        return;
+      }
+      
+      // Check if extension is installed
+      const extensionInstalled = localStorage.getItem('blaze-extension-installed') === 'true';
+      if (!extensionInstalled) {
+        toast({
+          title: '⚠️ Extensão necessária',
+          description: 'Instale a extensão Chrome e abra o Blaze em outra aba para apostas automáticas',
           variant: 'destructive',
         });
         return;

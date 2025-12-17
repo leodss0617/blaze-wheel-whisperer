@@ -400,10 +400,10 @@ export function ExtensionPanel({
         {!isInstalled && (
           <div className="space-y-2 p-2 rounded bg-yellow-500/10 border border-yellow-500/30">
             <p className="text-xs text-yellow-400 font-medium">
-              ⚠️ Extensão não detectada
+              ⚠️ Extensão necessária para apostas automáticas
             </p>
             <p className="text-[10px] text-muted-foreground">
-              Instale a extensão Chrome para que as apostas sejam feitas automaticamente no site da Blaze.
+              A Blaze bloqueia apostas via API direta. Instale a extensão Chrome para que as apostas sejam feitas automaticamente na interface do site.
             </p>
             <div className="flex gap-2">
               <Button
@@ -425,6 +425,27 @@ export function ExtensionPanel({
                 Abrir Blaze
               </Button>
             </div>
+          </div>
+        )}
+
+        {/* Connected but extension not on Blaze page */}
+        {isInstalled && !isConnected && (
+          <div className="space-y-2 p-2 rounded bg-blue-500/10 border border-blue-500/30">
+            <p className="text-xs text-blue-400 font-medium">
+              ℹ️ Extensão instalada, aguardando conexão
+            </p>
+            <p className="text-[10px] text-muted-foreground">
+              Abra o site da Blaze (blaze.bet.br/games/double) em outra aba para ativar a conexão.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full text-xs"
+              onClick={() => window.open('https://blaze.bet.br/games/double', '_blank')}
+            >
+              <ExternalLink className="h-3 w-3 mr-1" />
+              Abrir Blaze
+            </Button>
           </div>
         )}
 
