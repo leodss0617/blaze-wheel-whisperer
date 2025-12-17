@@ -143,12 +143,12 @@ export function useBlazeData() {
   }, []);
 
   // Handle win - reset to analyzing and add profit
-  const handleWin = useCallback((signal: PredictionSignal, lastRoundNumber: number) => {
+  const handleWin = useCallback((signal: PredictionSignal, lastRoundNumber: number, actualColor: BlazeColor) => {
     console.log('WIN! Resetting to analyzing mode');
-    const updated = { ...signal, status: 'win' as const };
+    const updated = { ...signal, status: 'win' as const, actualResult: actualColor };
     updateSignalInDb(updated);
     setSignals(prev => prev.map(s => s.id === signal.id ? updated : s));
-    recordWin();
+    recordWin(actualColor);
     
     // Mark this round as completed for interval counting
     lastCompletedRoundNumber.current = lastRoundNumber;
@@ -218,7 +218,7 @@ export function useBlazeData() {
       console.log('LOSS! Máximo de gales atingido - Previsão CONCLUÍDA como ERRADA');
       updateSignalInDb(updated);
       setSignals(prev => prev.map(s => s.id === signal.id ? updated : s));
-      recordLoss();
+      recordLoss(actualColor);
       
       // Mark this round as completed for interval counting
       lastCompletedRoundNumber.current = lastRoundNumber;
@@ -258,7 +258,7 @@ export function useBlazeData() {
     
     if (lastRound.color === currentPrediction.predictedColor) {
       console.log('✅ ACERTOU!');
-      handleWin(currentPrediction, lastRound.number);
+      handleWin(currentPrediction, lastRound.number, lastRound.color);
     } else if (lastRound.color === 'white') {
       console.log('⚪ Branco - aguardando próxima');
     } else {
