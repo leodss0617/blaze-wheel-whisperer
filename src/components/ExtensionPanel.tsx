@@ -1,11 +1,12 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Download, Chrome, CheckCircle2, AlertCircle, ExternalLink, Wifi, WifiOff, Activity, Shield } from 'lucide-react';
+import { Download, Chrome, CheckCircle2, AlertCircle, ExternalLink, Wifi, WifiOff, Activity, Shield, TestTube, Loader2 } from 'lucide-react';
 import { useExtensionBridge } from '@/hooks/useExtensionBridge';
 import { ColorBall } from './ColorBall';
+import { toast } from 'sonner';
 import type { PredictionSignal } from '@/types/blaze';
 import type { WhiteProtectionSignal } from '@/hooks/useWhiteProtectionAI';
 
@@ -28,12 +29,15 @@ export function ExtensionPanel({
     extensionData,
     sendPrediction,
     sendWhiteProtectionSignal,
+    sendSignalToExtension,
     convertResultsToRounds,
+    requestExtensionStatus,
     isInstalled,
     isConnected,
   } = useExtensionBridge();
 
   const lastSentProtectionId = useRef<string | null>(null);
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
 
   // Send prediction to extension when it changes
   useEffect(() => {
@@ -61,6 +65,34 @@ export function ExtensionPanel({
       onExtensionResults(rounds);
     }
   }, [extensionData.results, onExtensionResults, convertResultsToRounds]);
+
+  const testCommunication = () => {
+    setTestStatus('testing');
+    
+    // Send a test signal
+    const testColor = Math.random() > 0.5 ? 'red' : 'black';
+    const sent = sendSignalToExtension(testColor as 'red' | 'black', 0.01, 100, 0, false);
+    
+    // Request status from extension
+    requestExtensionStatus();
+    
+    // Check for response
+    setTimeout(() => {
+      if (isConnected || extensionData.status.lastActivity) {
+        setTestStatus('success');
+        toast.success('Comunicação OK! Extensão respondeu.', {
+          description: `Último sinal: ${testColor.toUpperCase()} - Teste`,
+        });
+      } else {
+        setTestStatus('error');
+        toast.error('Sem resposta da extensão', {
+          description: 'Verifique se a extensão está instalada e a página do Blaze está aberta.',
+        });
+      }
+      
+      setTimeout(() => setTestStatus('idle'), 3000);
+    }, 2000);
+  };
 
   const downloadExtension = () => {
     alert(
@@ -117,6 +149,25 @@ export function ExtensionPanel({
             </Badge>
           </div>
         </div>
+
+        {/* Test Communication Button */}
+        <Button
+          size="sm"
+          variant="outline"
+          className="w-full text-xs"
+          onClick={testCommunication}
+          disabled={testStatus === 'testing'}
+        >
+          {testStatus === 'testing' ? (
+            <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Testando...</>
+          ) : testStatus === 'success' ? (
+            <><CheckCircle2 className="h-3 w-3 mr-1 text-green-400" /> Comunicação OK!</>
+          ) : testStatus === 'error' ? (
+            <><AlertCircle className="h-3 w-3 mr-1 text-red-400" /> Sem resposta</>
+          ) : (
+            <><TestTube className="h-3 w-3 mr-1" /> Testar Comunicação</>
+          )}
+        </Button>
 
         {/* Last Activity */}
         {isInstalled && (
