@@ -44,13 +44,23 @@ export function ExtensionPanel({
 
   const lastSentProtectionId = useRef<string | null>(null);
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [autoSendEnabled, setAutoSendEnabled] = useState(true);
 
-  // Send prediction to extension when it changes
+  // Send prediction to extension when it changes - with better logging
   useEffect(() => {
+    if (!autoSendEnabled) return;
+    
     if (currentPrediction && currentPrediction.predictedColor !== 'white') {
-      sendPrediction(currentPrediction, betAmount, galeLevel);
+      const sent = sendPrediction(currentPrediction, betAmount, galeLevel);
+      if (sent) {
+        console.log('📡 Sinal enviado para extensão:', currentPrediction.predictedColor, betAmount);
+        toast.success(`Sinal enviado: ${currentPrediction.predictedColor === 'red' ? 'VERMELHO' : 'PRETO'}`, {
+          description: `R$ ${betAmount.toFixed(2)} - Gale ${galeLevel}`,
+          duration: 3000,
+        });
+      }
     }
-  }, [currentPrediction, betAmount, galeLevel, sendPrediction]);
+  }, [currentPrediction, betAmount, galeLevel, sendPrediction, autoSendEnabled]);
 
   // Send white protection signal when it changes
   useEffect(() => {
