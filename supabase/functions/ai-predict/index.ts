@@ -13,7 +13,7 @@ interface RoundData {
   round_timestamp: string;
 }
 
-// Blaze Double has 15 numbers (0-14), each appearing twice = 30 positions
+// Blaze Double has 15 numbers (0-14) - duplicates are detected when they appear consecutively in history
 const NUMBER_TO_COLOR: Record<number, string> = {
   0: 'white',
   1: 'red', 2: 'black', 3: 'red', 4: 'black',
@@ -207,52 +207,86 @@ serve(async (req) => {
       blackReasons.push(numberSeq.reason);
     }
 
-    // ==================== 3. 30-ROUND CYCLE ANALYSIS ====================
-    // Each complete cycle has all 15 numbers appearing twice
-    const analyzeCyclePosition = () => {
-      // Count number appearances in current cycle
-      const numberCounts: Record<number, number> = {};
-      for (let n = 0; n <= 14; n++) numberCounts[n] = 0;
+    // ==================== 3. DUPLICATE NUMBER ANALYSIS ====================
+    // Analyze ACTUAL duplicate numbers in the sequence (not theoretical cycles)
+    const analyzeDuplicateNumbers = () => {
+      const duplicates: { num: number; positions: number[]; color: string }[] = [];
+      const consecutiveDups: { num: number; color: string }[] = [];
       
-      for (const num of numbers30) {
-        numberCounts[num]++;
+      // Find all duplicate numbers in the history
+      for (let i = 0; i < numbers30.length; i++) {
+        const num = numbers30[i];
+        
+        // Check for consecutive duplicates (same number back to back)
+        if (i > 0 && numbers30[i - 1] === num) {
+          consecutiveDups.push({ num, color: NUMBER_TO_COLOR[num] });
+        }
+        
+        // Find all positions of this number
+        const positions: number[] = [];
+        for (let j = 0; j < numbers30.length; j++) {
+          if (numbers30[j] === num) positions.push(j);
+        }
+        
+        if (positions.length >= 2 && !duplicates.find(d => d.num === num)) {
+          duplicates.push({ num, positions, color: NUMBER_TO_COLOR[num] });
+        }
       }
       
-      // Find numbers that haven't appeared or appeared only once
-      const missingOnce: number[] = [];
-      const missingCompletely: number[] = [];
+      return { duplicates, consecutiveDups };
+    };
+    
+    // Analyze what color tends to follow duplicate numbers
+    const analyzeDuplicateFollowers = () => {
+      let afterDupRed = 0;
+      let afterDupBlack = 0;
       
-      for (let n = 0; n <= 14; n++) {
-        if (numberCounts[n] === 0) missingCompletely.push(n);
-        else if (numberCounts[n] === 1) missingOnce.push(n);
+      for (let i = 1; i < numbers60.length - 1; i++) {
+        // If this number is the same as the previous (consecutive duplicate)
+        if (numbers60[i] === numbers60[i - 1]) {
+          const nextColor = colors60[i + 1];
+          if (nextColor === 'red') afterDupRed++;
+          else if (nextColor === 'black') afterDupBlack++;
+        }
       }
       
-      // Calculate color bias from missing numbers
-      let redMissing = 0;
-      let blackMissing = 0;
-      
-      for (const n of missingCompletely) {
-        if (NUMBER_TO_COLOR[n] === 'red') redMissing += 2;
-        else if (NUMBER_TO_COLOR[n] === 'black') blackMissing += 2;
-      }
-      
-      for (const n of missingOnce) {
-        if (NUMBER_TO_COLOR[n] === 'red') redMissing += 1;
-        else if (NUMBER_TO_COLOR[n] === 'black') blackMissing += 1;
-      }
-      
-      return { redMissing, blackMissing, missingCompletely, missingOnce };
+      return { afterDupRed, afterDupBlack };
     };
 
-    const cycleAnalysis = analyzeCyclePosition();
+    const dupAnalysis = analyzeDuplicateNumbers();
+    const dupFollowers = analyzeDuplicateFollowers();
     
-    if (cycleAnalysis.redMissing > cycleAnalysis.blackMissing + 3) {
-      redScore += (cycleAnalysis.redMissing - cycleAnalysis.blackMissing) * 2;
-      redReasons.push(`Ciclo: ${cycleAnalysis.missingCompletely.filter(n => NUMBER_TO_COLOR[n] === 'red').length} nums vermelhos faltando`);
-    } else if (cycleAnalysis.blackMissing > cycleAnalysis.redMissing + 3) {
-      blackScore += (cycleAnalysis.blackMissing - cycleAnalysis.redMissing) * 2;
-      blackReasons.push(`Ciclo: ${cycleAnalysis.missingCompletely.filter(n => NUMBER_TO_COLOR[n] === 'black').length} nums pretos faltando`);
+    // If last number is a duplicate of previous, use historical data
+    if (numbers30.length >= 2 && numbers30[0] === numbers30[1]) {
+      const total = dupFollowers.afterDupRed + dupFollowers.afterDupBlack;
+      if (total >= 5) {
+        const redProb = dupFollowers.afterDupRed / total;
+        if (redProb > 0.55) {
+          redScore += (redProb - 0.5) * 30;
+          redReasons.push(`Após número duplicado: ${(redProb * 100).toFixed(0)}% vermelho`);
+        } else if (redProb < 0.45) {
+          blackScore += (0.5 - redProb) * 30;
+          blackReasons.push(`Após número duplicado: ${((1 - redProb) * 100).toFixed(0)}% preto`);
+        }
+      }
     }
+    
+    // Analyze recent duplicate patterns (colors of duplicated numbers)
+    if (dupAnalysis.consecutiveDups.length >= 2) {
+      const recentDupColors = dupAnalysis.consecutiveDups.slice(0, 5);
+      const redDups = recentDupColors.filter(d => d.color === 'red').length;
+      const blackDups = recentDupColors.filter(d => d.color === 'black').length;
+      
+      if (redDups > blackDups + 1) {
+        blackScore += (redDups - blackDups) * 5;
+        blackReasons.push(`Duplicatas recentes: ${redDups} vermelhas → tendência preto`);
+      } else if (blackDups > redDups + 1) {
+        redScore += (blackDups - redDups) * 5;
+        redReasons.push(`Duplicatas recentes: ${blackDups} pretas → tendência vermelho`);
+      }
+    }
+
+    const cycleAnalysis = { duplicates: dupAnalysis.duplicates.length, consecutiveDups: dupAnalysis.consecutiveDups.length };
 
     // ==================== 4. STREAK ANALYSIS (with Gale consideration) ====================
     const analyzeStreaks = () => {
