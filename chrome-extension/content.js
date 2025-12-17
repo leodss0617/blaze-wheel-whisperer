@@ -1425,33 +1425,79 @@
 
   // Escutar mensagens do background script
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    log('📨 Mensagem do background:', message);
+    log('📨 Mensagem do background:', message.type, message);
     
-    if (message.type === 'BET_SIGNAL') {
-      if (!isEnabled) {
-        sendResponse({ success: false, reason: 'Automação desativada' });
-        return;
-      }
-      
-      processSignal(message.data);
-      sendResponse({ success: true });
-      return true;
+    switch (message.type) {
+      case 'BET_SIGNAL':
+        if (!isEnabled) {
+          addLog('⚠️ Sinal recebido mas automação OFF');
+          sendResponse({ success: false, reason: 'Automação desativada. Ative o Auto Bet IA.' });
+          return;
+        }
+        addLog('📡 Sinal recebido via background!');
+        processSignal(message.data).then(() => {
+          sendResponse({ success: true, processed: true });
+        });
+        return true; // Keep channel open for async
+        
+      case 'WHITE_PROTECTION_SIGNAL':
+        if (!isEnabled) {
+          sendResponse({ success: false, reason: 'Automação desativada' });
+          return;
+        }
+        addLog('⚪ Proteção branco via background!');
+        processSignal(message.data).then(() => {
+          sendResponse({ success: true, processed: true });
+        });
+        return true;
+        
+      case 'GET_STATUS':
+        const status = {
+          isEnabled,
+          connectionStatus,
+          currentColor,
+          currentBetAmount,
+          isBettingOpen: isBettingOpen(),
+          url: window.location.href,
+          version: '1.2.0'
+        };
+        log('📤 Enviando status:', status);
+        sendResponse(status);
+        // Also broadcast status
+        broadcastExtensionStatus();
+        break;
+        
+      case 'SET_ENABLED':
+        if (message.enabled !== undefined) {
+          isEnabled = message.enabled;
+          const btn = document.getElementById('bap-toggle');
+          if (btn) {
+            btn.textContent = isEnabled ? 'ON' : 'OFF';
+            btn.className = isEnabled ? 'bap-toggle bap-on' : 'bap-toggle';
+          }
+          if (isEnabled && connectionStatus !== 'connected') {
+            connectToSignalServer();
+          }
+          addLog(isEnabled ? '✅ Automação ativada remotamente' : '⛔ Automação desativada remotamente');
+          sendResponse({ success: true, isEnabled });
+        }
+        break;
+        
+      case 'TOGGLE':
+        toggleAutoBet();
+        sendResponse({ isEnabled });
+        break;
+        
+      case 'PING':
+        sendResponse({ pong: true, timestamp: Date.now() });
+        break;
+        
+      default:
+        log('Tipo de mensagem não reconhecido:', message.type);
+        sendResponse({ error: 'Unknown message type' });
     }
     
-    if (message.type === 'GET_STATUS') {
-      sendResponse({
-        isEnabled,
-        connectionStatus,
-        currentColor,
-        currentBetAmount,
-        isBettingOpen: isBettingOpen()
-      });
-    }
-    
-    if (message.type === 'TOGGLE') {
-      toggleAutoBet();
-      sendResponse({ isEnabled });
-    }
+    return false;
   });
 
   // Escutar BroadcastChannel
@@ -1508,7 +1554,7 @@
         updateStatus(isEnabled ? 'Conectado' : 'Desconectado', null, currentBetAmount);
       });
       
-      addLog('🚀 Extensão carregada v1.1');
+      addLog('🚀 Extensão carregada v1.2');
       log('✅ Extensão inicializada com sucesso');
       
       // Marcar extensão como instalada
