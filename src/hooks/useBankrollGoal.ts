@@ -13,6 +13,15 @@ export interface BankrollGoal {
   projectedCompletion: Date | null;
 }
 
+export interface BettingConfig {
+  baseBet: number;
+  maxGales: number;
+  dailyLossLimit: number;
+  betsPerDay: number;
+  stopOnTarget: boolean;
+  stopOnLoss: boolean;
+}
+
 export interface DailyProgress {
   date: string;
   target: number;
@@ -22,6 +31,7 @@ export interface DailyProgress {
 
 const STORAGE_KEY = 'blaze-bankroll-goal';
 const DAILY_PROGRESS_KEY = 'blaze-daily-progress';
+const BETTING_CONFIG_KEY = 'blaze-goal-betting-config';
 
 export function useBankrollGoal(currentProfit: number) {
   const [goal, setGoal] = useState<BankrollGoal | null>(() => {
@@ -39,6 +49,21 @@ export function useBankrollGoal(currentProfit: number) {
       console.error('Error loading goal:', e);
     }
     return null;
+  });
+
+  const [bettingConfig, setBettingConfig] = useState<BettingConfig>(() => {
+    try {
+      const saved = localStorage.getItem(BETTING_CONFIG_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {
+      baseBet: 2,
+      maxGales: 2,
+      dailyLossLimit: 30,
+      betsPerDay: 20,
+      stopOnTarget: true,
+      stopOnLoss: true,
+    };
   });
 
   const [dailyProgress, setDailyProgress] = useState<DailyProgress[]>(() => {
@@ -61,6 +86,28 @@ export function useBankrollGoal(currentProfit: number) {
   useEffect(() => {
     localStorage.setItem(DAILY_PROGRESS_KEY, JSON.stringify(dailyProgress));
   }, [dailyProgress]);
+
+  // Save betting config to localStorage
+  useEffect(() => {
+    localStorage.setItem(BETTING_CONFIG_KEY, JSON.stringify(bettingConfig));
+  }, [bettingConfig]);
+
+  // Calculate recommended base bet from goal
+  const calculateRecommendedBet = useCallback((
+    dailyTarget: number,
+    maxGales: number = 2,
+    winRate: number = 0.6
+  ): number => {
+    // Conservative: assume we need to survive losing streaks
+    // Average win cycle profit = baseBet * (2^0 + 2^1 + ... + 2^gales) - cost = baseBet
+    // Expected daily profit = betsPerDay * winRate * baseBet
+    const betsPerDay = bettingConfig.betsPerDay;
+    const expectedWins = betsPerDay * winRate;
+    
+    // Each win cycle averages ~1x base bet profit
+    const recommendedBet = dailyTarget / expectedWins;
+    return Math.max(1, Math.round(recommendedBet * 100) / 100);
+  }, [bettingConfig.betsPerDay]);
 
   // Calculate goal metrics
   const calculateGoal = useCallback((
@@ -191,13 +238,51 @@ export function useBankrollGoal(currentProfit: number) {
     return requiredDaily <= goal.dailyTarget * 1.5; // 50% buffer
   }, [goal, currentProfit]);
 
+  // Update betting config
+  const updateBettingConfig = useCallback((updates: Partial<BettingConfig>) => {
+    setBettingConfig(prev => ({ ...prev, ...updates }));
+  }, []);
+
+  // Calculate martingale bet amount
+  const calculateMartingaleBet = useCallback((galeLevel: number): number => {
+    return bettingConfig.baseBet * Math.pow(2, galeLevel);
+  }, [bettingConfig.baseBet]);
+
+  // Get total cycle cost (all gales)
+  const getTotalCycleCost = useCallback((): number => {
+    let total = 0;
+    for (let i = 0; i <= bettingConfig.maxGales; i++) {
+      total += calculateMartingaleBet(i);
+    }
+    return total;
+  }, [bettingConfig.maxGales, calculateMartingaleBet]);
+
+  // Sync betting config when goal changes
+  useEffect(() => {
+    if (goal) {
+      const recommendedBet = calculateRecommendedBet(goal.dailyTarget, bettingConfig.maxGales);
+      const dailyLossLimit = Math.min(goal.dailyTarget * 0.5, goal.currentBankroll * 0.1);
+      
+      setBettingConfig(prev => ({
+        ...prev,
+        baseBet: Math.max(prev.baseBet, recommendedBet * 0.8), // Don't decrease dramatically
+        dailyLossLimit: Math.round(dailyLossLimit * 100) / 100,
+      }));
+    }
+  }, [goal?.dailyTarget, goal?.currentBankroll]);
+
   return {
     goal,
     dailyProgress,
+    bettingConfig,
     setNewGoal,
     updateGoalProgress,
     clearGoal,
     getTodayProgress,
     isGoalAchievable,
+    updateBettingConfig,
+    calculateRecommendedBet,
+    calculateMartingaleBet,
+    getTotalCycleCost,
   };
 }

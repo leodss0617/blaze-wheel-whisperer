@@ -83,6 +83,14 @@ const Index = () => {
   }, [currentProtection, playWhiteProtectionSound]);
 
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
+  const [goalBettingConfig, setGoalBettingConfig] = useState<{
+    baseBet: number;
+    maxGales: number;
+    dailyTarget: number;
+    dailyLossLimit: number;
+    stopOnTarget: boolean;
+    stopOnLoss: boolean;
+  } | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -90,6 +98,13 @@ const Index = () => {
     const isInstalled = window.matchMedia('(display-mode: standalone)').matches;
     setShowInstallPrompt(!isInstalled);
   }, []);
+
+  // Sync goal betting config with baseBet
+  useEffect(() => {
+    if (goalBettingConfig && goalBettingConfig.baseBet !== baseBet) {
+      setBaseBet(goalBettingConfig.baseBet);
+    }
+  }, [goalBettingConfig, baseBet, setBaseBet]);
 
   const lastRound = rounds.length > 0 ? rounds[rounds.length - 1] : null;
 
@@ -319,6 +334,7 @@ const Index = () => {
                 <BankrollGoalManager
                   currentProfit={totalProfit}
                   currentBankroll={currentBankroll}
+                  onBettingConfigChange={setGoalBettingConfig}
                 />
               </TabsContent>
 
@@ -331,9 +347,12 @@ const Index = () => {
                 />
                 <ExtensionPanel
                   currentPrediction={currentPrediction}
-                  betAmount={baseBet}
+                  betAmount={goalBettingConfig?.baseBet || baseBet}
                   galeLevel={galeLevel}
                   whiteProtection={currentProtection}
+                  maxGales={goalBettingConfig?.maxGales || 2}
+                  dailyTarget={goalBettingConfig?.dailyTarget}
+                  dailyLossLimit={goalBettingConfig?.dailyLossLimit}
                 />
               </TabsContent>
 
@@ -413,6 +432,7 @@ const Index = () => {
                   <BankrollGoalManager
                     currentProfit={totalProfit}
                     currentBankroll={currentBankroll}
+                    onBettingConfigChange={setGoalBettingConfig}
                   />
                   <StatsPanel stats={stats} />
                 </TabsContent>
@@ -426,9 +446,12 @@ const Index = () => {
                   />
                   <ExtensionPanel
                     currentPrediction={currentPrediction}
-                    betAmount={baseBet}
+                    betAmount={goalBettingConfig?.baseBet || baseBet}
                     galeLevel={galeLevel}
                     whiteProtection={currentProtection}
+                    maxGales={goalBettingConfig?.maxGales || 2}
+                    dailyTarget={goalBettingConfig?.dailyTarget}
+                    dailyLossLimit={goalBettingConfig?.dailyLossLimit}
                   />
                 </TabsContent>
 

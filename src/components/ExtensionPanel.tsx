@@ -15,6 +15,9 @@ interface ExtensionPanelProps {
   betAmount: number;
   galeLevel: number;
   whiteProtection?: WhiteProtectionSignal | null;
+  maxGales?: number;
+  dailyTarget?: number;
+  dailyLossLimit?: number;
   onExtensionResults?: (rounds: { color: string; number: number; timestamp: Date }[]) => void;
 }
 
@@ -23,6 +26,9 @@ export function ExtensionPanel({
   betAmount, 
   galeLevel, 
   whiteProtection,
+  maxGales = 2,
+  dailyTarget,
+  dailyLossLimit,
   onExtensionResults 
 }: ExtensionPanelProps) {
   const {
@@ -218,6 +224,35 @@ export function ExtensionPanel({
             <p className="text-[10px] text-center text-muted-foreground">
               Extensão executará automaticamente
             </p>
+          </div>
+        )}
+
+        {/* Goal-based Betting Info */}
+        {(dailyTarget || dailyLossLimit) && (
+          <div className="p-2 rounded bg-muted/30 border border-border/30 space-y-1">
+            <p className="text-[10px] font-medium text-center">📊 Configuração da Meta</p>
+            <div className="grid grid-cols-2 gap-2 text-[10px]">
+              <div className="text-center">
+                <span className="text-muted-foreground">Aposta:</span>
+                <span className="ml-1 font-bold text-primary">R$ {betAmount.toFixed(2)}</span>
+              </div>
+              <div className="text-center">
+                <span className="text-muted-foreground">Gales:</span>
+                <span className="ml-1 font-bold">{maxGales}</span>
+              </div>
+              {dailyTarget && (
+                <div className="text-center">
+                  <span className="text-muted-foreground">Meta:</span>
+                  <span className="ml-1 font-bold text-green-400">R$ {dailyTarget.toFixed(2)}</span>
+                </div>
+              )}
+              {dailyLossLimit && (
+                <div className="text-center">
+                  <span className="text-muted-foreground">Limite:</span>
+                  <span className="ml-1 font-bold text-red-400">-R$ {dailyLossLimit.toFixed(2)}</span>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
