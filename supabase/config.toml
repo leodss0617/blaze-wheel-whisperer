@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.white-protection-ai]
 verify_jwt = false
+
+[functions.update-learned-patterns]
+verify_jwt = false

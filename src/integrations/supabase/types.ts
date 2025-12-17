@@ -41,6 +41,45 @@ export type Database = {
         }
         Relationships: []
       }
+      learned_patterns: {
+        Row: {
+          created_at: string
+          id: string
+          last_result: string | null
+          pattern_data: Json
+          pattern_key: string
+          pattern_type: string
+          success_rate: number | null
+          times_correct: number
+          times_seen: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_result?: string | null
+          pattern_data: Json
+          pattern_key: string
+          pattern_type: string
+          success_rate?: number | null
+          times_correct?: number
+          times_seen?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_result?: string | null
+          pattern_data?: Json
+          pattern_key?: string
+          pattern_type?: string
+          success_rate?: number | null
+          times_correct?: number
+          times_seen?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       prediction_signals: {
         Row: {
           actual_result: string | null
@@ -76,6 +115,39 @@ export type Database = {
           reason?: string
           signal_timestamp?: string
           status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      white_patterns: {
+        Row: {
+          average_gap_when_appeared: number | null
+          created_at: string
+          gap_range: string
+          id: string
+          sequence_before_white: string[] | null
+          times_seen: number
+          times_white_appeared: number
+          updated_at: string
+        }
+        Insert: {
+          average_gap_when_appeared?: number | null
+          created_at?: string
+          gap_range: string
+          id?: string
+          sequence_before_white?: string[] | null
+          times_seen?: number
+          times_white_appeared?: number
+          updated_at?: string
+        }
+        Update: {
+          average_gap_when_appeared?: number | null
+          created_at?: string
+          gap_range?: string
+          id?: string
+          sequence_before_white?: string[] | null
+          times_seen?: number
+          times_white_appeared?: number
           updated_at?: string
         }
         Relationships: []
