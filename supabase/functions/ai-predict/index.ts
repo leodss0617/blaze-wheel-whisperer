@@ -6,20 +6,21 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-interface LearnedPattern {
-  pattern_type: string;
-  pattern_key: string;
-  pattern_data: any;
-  times_seen: number;
-  times_correct: number;
-  success_rate: number;
+interface RoundData {
+  blaze_id: string;
+  color: string;
+  number: number;
+  round_timestamp: string;
 }
 
-interface PredictionScore {
-  color: 'red' | 'black';
-  score: number;
-  reasons: string[];
-}
+// Blaze Double has 15 numbers (0-14), each appearing twice = 30 positions
+const NUMBER_TO_COLOR: Record<number, string> = {
+  0: 'white',
+  1: 'red', 2: 'black', 3: 'red', 4: 'black',
+  5: 'red', 6: 'black', 7: 'red', 8: 'black',
+  9: 'red', 10: 'black', 11: 'red', 12: 'black',
+  13: 'red', 14: 'black'
+};
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -39,9 +40,16 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
-    console.log('AI Predict called - Recalibration mode:', recalibrationMode);
+    // Current time in Brasília
+    const now = new Date();
+    const brasiliaTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    const currentHour = brasiliaTime.getHours();
+    const currentMinute = brasiliaTime.getMinutes();
+    const currentSecond = brasiliaTime.getSeconds();
+    
+    console.log(`AI Predict - Brasília: ${currentHour}:${currentMinute}:${currentSecond} | Recalibration: ${recalibrationMode}`);
 
-    // Fetch recent rounds from database
+    // Fetch recent rounds - 200 for comprehensive analysis
     const { data: recentRounds, error: roundsError } = await supabase
       .from('blaze_rounds')
       .select('*')
@@ -64,7 +72,7 @@ serve(async (req) => {
       console.error('Error fetching patterns:', patternsError);
     }
 
-    // Fetch recent signals with their outcomes
+    // Fetch past signals for performance analysis
     const { data: pastSignals, error: signalsError } = await supabase
       .from('prediction_signals')
       .select('*')
@@ -75,575 +83,562 @@ serve(async (req) => {
       console.error('Error fetching signals:', signalsError);
     }
 
-    // Calculate performance metrics
-    const completedSignals = pastSignals?.filter(s => s.status !== 'pending') || [];
-    const wins = completedSignals.filter(s => s.status === 'win').length;
-    const losses = completedSignals.filter(s => s.status === 'loss').length;
-    const winRate = completedSignals.length > 0 ? (wins / completedSignals.length * 100) : 0;
-
-    // Extract color arrays
-    const last10Rounds = recentRounds?.slice(0, 10) || [];
-    const last20Rounds = recentRounds?.slice(0, 20) || [];
-    const last50Rounds = recentRounds?.slice(0, 50) || [];
-    const last100Rounds = recentRounds?.slice(0, 100) || [];
+    const rounds = (recentRounds || []) as RoundData[];
     
-    const last10Colors = last10Rounds.map(r => r.color);
-    const last20Colors = last20Rounds.map(r => r.color);
-    const last50Colors = last50Rounds.map(r => r.color);
-    const last100Colors = last100Rounds.map(r => r.color);
-
-    // Create unique round identifiers
-    const roundIdentifiers = last20Rounds.map(r => ({
-      id: r.blaze_id,
-      color: r.color,
-      number: r.number,
-      timestamp: r.round_timestamp,
-      uniqueKey: `${r.blaze_id}_${r.number}_${new Date(r.round_timestamp).getTime()}`
-    }));
+    // Extract data arrays
+    const last30 = rounds.slice(0, 30);  // One complete cycle
+    const last60 = rounds.slice(0, 60);  // Two cycles
+    const last100 = rounds.slice(0, 100);
     
-    // Color counting utility
-    const countColors = (colors: string[]) => ({
-      red: colors.filter(c => c === 'red').length,
-      black: colors.filter(c => c === 'black').length,
-      white: colors.filter(c => c === 'white').length,
-    });
+    const colors30 = last30.map(r => r.color);
+    const colors60 = last60.map(r => r.color);
+    const colors100 = last100.map(r => r.color);
+    
+    const numbers30 = last30.map(r => r.number);
+    const numbers60 = last60.map(r => r.number);
 
-    const last10Stats = countColors(last10Colors);
-    const last20Stats = countColors(last20Colors);
-    const last50Stats = countColors(last50Colors);
-    const last100Stats = countColors(last100Colors);
-
-    // ==================== ADVANCED PREDICTION ALGORITHMS ====================
-
-    // Initialize prediction scores
+    // ==================== PREDICTION SCORES ====================
     let redScore = 0;
     let blackScore = 0;
     const redReasons: string[] = [];
     const blackReasons: string[] = [];
 
-    // 1. MARKOV CHAIN ANALYSIS - Transition probabilities
-    const buildMarkovChain = (colors: string[]) => {
+    // ==================== 1. TIME-BASED ANALYSIS ====================
+    // Different hours/minutes may have different patterns
+    const analyzeTimePatterns = () => {
+      const hourRounds = rounds.filter(r => {
+        const roundTime = new Date(r.round_timestamp);
+        return roundTime.getHours() === currentHour;
+      }).slice(0, 50);
+
+      if (hourRounds.length >= 20) {
+        const hourColors = hourRounds.map(r => r.color);
+        const redCount = hourColors.filter(c => c === 'red').length;
+        const blackCount = hourColors.filter(c => c === 'black').length;
+        const total = redCount + blackCount;
+        
+        if (total > 0) {
+          const redPct = redCount / total;
+          if (redPct > 0.55) {
+            return { bias: 'red', strength: (redPct - 0.5) * 40 };
+          } else if (redPct < 0.45) {
+            return { bias: 'black', strength: (0.5 - redPct) * 40 };
+          }
+        }
+      }
+      
+      return { bias: null, strength: 0 };
+    };
+
+    const timeBias = analyzeTimePatterns();
+    if (timeBias.bias === 'red') {
+      redScore += timeBias.strength;
+      redReasons.push(`Horário ${currentHour}h favorece vermelho`);
+    } else if (timeBias.bias === 'black') {
+      blackScore += timeBias.strength;
+      blackReasons.push(`Horário ${currentHour}h favorece preto`);
+    }
+
+    // Minute patterns (some minutes may have tendencies)
+    const minuteBlock = Math.floor(currentMinute / 10); // 0-5 blocks
+    const minuteRounds = rounds.filter(r => {
+      const roundTime = new Date(r.round_timestamp);
+      return Math.floor(roundTime.getMinutes() / 10) === minuteBlock;
+    }).slice(0, 30);
+
+    if (minuteRounds.length >= 15) {
+      const colors = minuteRounds.map(r => r.color);
+      const redPct = colors.filter(c => c === 'red').length / colors.filter(c => c !== 'white').length;
+      
+      if (redPct > 0.58) {
+        redScore += 8;
+        redReasons.push(`Minutos ${minuteBlock * 10}-${minuteBlock * 10 + 9} favorecem vermelho`);
+      } else if (redPct < 0.42) {
+        blackScore += 8;
+        blackReasons.push(`Minutos ${minuteBlock * 10}-${minuteBlock * 10 + 9} favorecem preto`);
+      }
+    }
+
+    // ==================== 2. NUMBER SEQUENCE ANALYSIS ====================
+    // Analyze patterns in the actual numbers (0-14)
+    const analyzeNumberSequences = () => {
+      const lastNum = numbers30[0];
+      const last3Nums = numbers30.slice(0, 3);
+      const last5Nums = numbers30.slice(0, 5);
+      
+      // Find what typically follows specific numbers
+      const numberFollowers: Record<number, { red: number; black: number }> = {};
+      
+      for (let n = 0; n <= 14; n++) {
+        numberFollowers[n] = { red: 0, black: 0 };
+      }
+      
+      for (let i = 0; i < numbers60.length - 1; i++) {
+        const num = numbers60[i];
+        const nextColor = colors60[i + 1];
+        if (nextColor === 'red') numberFollowers[num].red++;
+        else if (nextColor === 'black') numberFollowers[num].black++;
+      }
+      
+      // What typically follows the last number?
+      if (lastNum !== undefined) {
+        const follower = numberFollowers[lastNum];
+        const total = follower.red + follower.black;
+        
+        if (total >= 5) {
+          const redPct = follower.red / total;
+          if (redPct > 0.6) {
+            return { bias: 'red', strength: (redPct - 0.5) * 30, reason: `Após número ${lastNum}` };
+          } else if (redPct < 0.4) {
+            return { bias: 'black', strength: (0.5 - redPct) * 30, reason: `Após número ${lastNum}` };
+          }
+        }
+      }
+      
+      return { bias: null, strength: 0, reason: '' };
+    };
+
+    const numberSeq = analyzeNumberSequences();
+    if (numberSeq.bias === 'red') {
+      redScore += numberSeq.strength;
+      redReasons.push(numberSeq.reason);
+    } else if (numberSeq.bias === 'black') {
+      blackScore += numberSeq.strength;
+      blackReasons.push(numberSeq.reason);
+    }
+
+    // ==================== 3. 30-ROUND CYCLE ANALYSIS ====================
+    // Each complete cycle has all 15 numbers appearing twice
+    const analyzeCyclePosition = () => {
+      // Count number appearances in current cycle
+      const numberCounts: Record<number, number> = {};
+      for (let n = 0; n <= 14; n++) numberCounts[n] = 0;
+      
+      for (const num of numbers30) {
+        numberCounts[num]++;
+      }
+      
+      // Find numbers that haven't appeared or appeared only once
+      const missingOnce: number[] = [];
+      const missingCompletely: number[] = [];
+      
+      for (let n = 0; n <= 14; n++) {
+        if (numberCounts[n] === 0) missingCompletely.push(n);
+        else if (numberCounts[n] === 1) missingOnce.push(n);
+      }
+      
+      // Calculate color bias from missing numbers
+      let redMissing = 0;
+      let blackMissing = 0;
+      
+      for (const n of missingCompletely) {
+        if (NUMBER_TO_COLOR[n] === 'red') redMissing += 2;
+        else if (NUMBER_TO_COLOR[n] === 'black') blackMissing += 2;
+      }
+      
+      for (const n of missingOnce) {
+        if (NUMBER_TO_COLOR[n] === 'red') redMissing += 1;
+        else if (NUMBER_TO_COLOR[n] === 'black') blackMissing += 1;
+      }
+      
+      return { redMissing, blackMissing, missingCompletely, missingOnce };
+    };
+
+    const cycleAnalysis = analyzeCyclePosition();
+    
+    if (cycleAnalysis.redMissing > cycleAnalysis.blackMissing + 3) {
+      redScore += (cycleAnalysis.redMissing - cycleAnalysis.blackMissing) * 2;
+      redReasons.push(`Ciclo: ${cycleAnalysis.missingCompletely.filter(n => NUMBER_TO_COLOR[n] === 'red').length} nums vermelhos faltando`);
+    } else if (cycleAnalysis.blackMissing > cycleAnalysis.redMissing + 3) {
+      blackScore += (cycleAnalysis.blackMissing - cycleAnalysis.redMissing) * 2;
+      blackReasons.push(`Ciclo: ${cycleAnalysis.missingCompletely.filter(n => NUMBER_TO_COLOR[n] === 'black').length} nums pretos faltando`);
+    }
+
+    // ==================== 4. STREAK ANALYSIS (with Gale consideration) ====================
+    const analyzeStreaks = () => {
+      let currentStreak = { color: colors30[0], count: 0 };
+      
+      // Count ALL same-color rounds (including gales)
+      for (const color of colors30) {
+        if (color === 'white') continue;
+        if (color === currentStreak.color) {
+          currentStreak.count++;
+        } else if (currentStreak.count === 0) {
+          currentStreak.color = color;
+          currentStreak.count = 1;
+        } else {
+          break;
+        }
+      }
+      
+      return currentStreak;
+    };
+
+    const currentStreak = analyzeStreaks();
+    
+    // Historical streak break analysis
+    const analyzeStreakBreaks = () => {
+      let breaksAfter2 = { broken: 0, continued: 0 };
+      let breaksAfter3 = { broken: 0, continued: 0 };
+      let breaksAfter4 = { broken: 0, continued: 0 };
+      
+      let streak = 1;
+      let streakColor = colors100[0];
+      
+      for (let i = 1; i < colors100.length; i++) {
+        if (colors100[i] === 'white') continue;
+        
+        if (colors100[i] === streakColor) {
+          streak++;
+        } else {
+          // Record break point
+          if (streak === 2) breaksAfter2.broken++;
+          else if (streak === 3) breaksAfter3.broken++;
+          else if (streak >= 4) breaksAfter4.broken++;
+          
+          streakColor = colors100[i];
+          streak = 1;
+        }
+        
+        // Record continuation
+        if (streak === 3 && colors100[i - 1] === streakColor) breaksAfter2.continued++;
+        if (streak === 4 && colors100[i - 1] === streakColor) breaksAfter3.continued++;
+        if (streak === 5 && colors100[i - 1] === streakColor) breaksAfter4.continued++;
+      }
+      
+      return { breaksAfter2, breaksAfter3, breaksAfter4 };
+    };
+
+    const streakHistory = analyzeStreakBreaks();
+    
+    if (currentStreak.count >= 2 && currentStreak.color !== 'white') {
+      const opposite = currentStreak.color === 'red' ? 'black' : 'red';
+      let breakProb = 0.5;
+      
+      if (currentStreak.count === 2) {
+        const total = streakHistory.breaksAfter2.broken + streakHistory.breaksAfter2.continued;
+        if (total > 5) breakProb = streakHistory.breaksAfter2.broken / total;
+      } else if (currentStreak.count === 3) {
+        const total = streakHistory.breaksAfter3.broken + streakHistory.breaksAfter3.continued;
+        if (total > 3) breakProb = streakHistory.breaksAfter3.broken / total;
+      } else if (currentStreak.count >= 4) {
+        const total = streakHistory.breaksAfter4.broken + streakHistory.breaksAfter4.continued;
+        if (total > 2) breakProb = streakHistory.breaksAfter4.broken / total;
+      }
+      
+      const streakWeight = currentStreak.count * breakProb * 8;
+      
+      if (opposite === 'red') {
+        redScore += streakWeight;
+        redReasons.push(`Sequência ${currentStreak.count}x ${currentStreak.color} (${(breakProb * 100).toFixed(0)}% quebra)`);
+      } else {
+        blackScore += streakWeight;
+        blackReasons.push(`Sequência ${currentStreak.count}x ${currentStreak.color} (${(breakProb * 100).toFixed(0)}% quebra)`);
+      }
+    }
+
+    // ==================== 5. PATTERN SIZE ANALYSIS ====================
+    // Detect and analyze various pattern sizes
+    const analyzePatternSizes = () => {
+      const patterns: { pattern: string; nextRed: number; nextBlack: number }[] = [];
+      
+      // 2-gram patterns
+      for (let i = 2; i < colors60.length - 1; i++) {
+        const p = colors60.slice(i, i + 2).join('-');
+        const next = colors60[i - 1];
+        if (next !== 'white') {
+          const existing = patterns.find(x => x.pattern === p);
+          if (existing) {
+            if (next === 'red') existing.nextRed++;
+            else existing.nextBlack++;
+          } else {
+            patterns.push({ pattern: p, nextRed: next === 'red' ? 1 : 0, nextBlack: next === 'black' ? 1 : 0 });
+          }
+        }
+      }
+      
+      // 3-gram patterns
+      for (let i = 3; i < colors60.length - 1; i++) {
+        const p = colors60.slice(i, i + 3).join('-');
+        const next = colors60[i - 1];
+        if (next !== 'white') {
+          const existing = patterns.find(x => x.pattern === p);
+          if (existing) {
+            if (next === 'red') existing.nextRed++;
+            else existing.nextBlack++;
+          } else {
+            patterns.push({ pattern: p, nextRed: next === 'red' ? 1 : 0, nextBlack: next === 'black' ? 1 : 0 });
+          }
+        }
+      }
+      
+      return patterns;
+    };
+
+    const allPatterns = analyzePatternSizes();
+    
+    // Check current 2-gram and 3-gram
+    const current2gram = colors30.slice(0, 2).join('-');
+    const current3gram = colors30.slice(0, 3).join('-');
+    
+    for (const p of allPatterns) {
+      if (p.pattern === current2gram || p.pattern === current3gram) {
+        const total = p.nextRed + p.nextBlack;
+        if (total >= 3) {
+          const redProb = p.nextRed / total;
+          const weight = p.pattern.split('-').length === 2 ? 10 : 15; // 3-gram has more weight
+          
+          if (redProb > 0.6) {
+            redScore += (redProb - 0.5) * weight * 2;
+            redReasons.push(`Padrão ${p.pattern}: ${(redProb * 100).toFixed(0)}% vermelho`);
+          } else if (redProb < 0.4) {
+            blackScore += (0.5 - redProb) * weight * 2;
+            blackReasons.push(`Padrão ${p.pattern}: ${((1 - redProb) * 100).toFixed(0)}% preto`);
+          }
+        }
+      }
+    }
+
+    // ==================== 6. MARKOV CHAIN ANALYSIS ====================
+    const buildMarkovChain = () => {
       const transitions: Record<string, Record<string, number>> = {
         red: { red: 0, black: 0 },
         black: { red: 0, black: 0 },
         white: { red: 0, black: 0 }
       };
       
-      for (let i = 0; i < colors.length - 1; i++) {
-        const current = colors[i];
-        const next = colors[i + 1];
+      for (let i = 0; i < colors100.length - 1; i++) {
+        const current = colors100[i];
+        const next = colors100[i + 1];
         if (next !== 'white' && transitions[current]) {
           transitions[current][next]++;
-        }
-      }
-      
-      // Normalize to probabilities
-      for (const state of Object.keys(transitions)) {
-        const total = transitions[state].red + transitions[state].black;
-        if (total > 0) {
-          transitions[state].red /= total;
-          transitions[state].black /= total;
         }
       }
       
       return transitions;
     };
 
-    const markovChain = buildMarkovChain(last100Colors);
-    const lastColor = last10Colors[0];
+    const markov = buildMarkovChain();
+    const lastColor = colors30[0];
     
-    if (lastColor && markovChain[lastColor]) {
-      const redProb = markovChain[lastColor].red;
-      const blackProb = markovChain[lastColor].black;
-      
-      if (redProb > blackProb + 0.1) {
-        redScore += (redProb - blackProb) * 20;
-        redReasons.push(`Markov: ${(redProb * 100).toFixed(0)}% após ${lastColor}`);
-      } else if (blackProb > redProb + 0.1) {
-        blackScore += (blackProb - redProb) * 20;
-        blackReasons.push(`Markov: ${(blackProb * 100).toFixed(0)}% após ${lastColor}`);
+    if (lastColor && lastColor !== 'white' && markov[lastColor]) {
+      const total = markov[lastColor].red + markov[lastColor].black;
+      if (total > 10) {
+        const redProb = markov[lastColor].red / total;
+        
+        if (redProb > 0.55) {
+          redScore += (redProb - 0.5) * 25;
+          redReasons.push(`Markov: ${(redProb * 100).toFixed(0)}% vermelho após ${lastColor}`);
+        } else if (redProb < 0.45) {
+          blackScore += (0.5 - redProb) * 25;
+          blackReasons.push(`Markov: ${((1 - redProb) * 100).toFixed(0)}% preto após ${lastColor}`);
+        }
       }
     }
 
-    // 2. STREAK ANALYSIS - Enhanced
-    let currentStreak = { color: last10Colors[0], count: 1 };
-    for (let i = 1; i < last20Colors.length; i++) {
-      if (last20Colors[i] === currentStreak.color && last20Colors[i] !== 'white') {
-        currentStreak.count++;
-      } else if (last20Colors[i] !== 'white') {
-        break;
-      }
-    }
-
-    // Dynamic streak strategy based on historical data
-    const streakBreakAnalysis = () => {
-      let streaksContinued = 0;
-      let streaksBroken = 0;
+    // ==================== 7. GAP ANALYSIS ====================
+    const calculateGaps = () => {
+      let redGap = 0;
+      let blackGap = 0;
       
-      for (let i = 0; i < last100Colors.length - 3; i++) {
-        const seq = last100Colors.slice(i, i + 4).filter(c => c !== 'white');
-        if (seq.length >= 3 && seq[0] === seq[1] && seq[1] === seq[2]) {
-          if (seq.length >= 4 && seq[2] === seq[3]) {
-            streaksContinued++;
-          } else if (seq.length >= 4) {
-            streaksBroken++;
+      for (const c of colors30) {
+        if (c === 'red') break;
+        if (c !== 'white') redGap++;
+      }
+      
+      for (const c of colors30) {
+        if (c === 'black') break;
+        if (c !== 'white') blackGap++;
+      }
+      
+      // Average gaps
+      const calcAvgGap = (targetColor: string) => {
+        const gaps: number[] = [];
+        let gap = 0;
+        
+        for (const c of colors100) {
+          if (c === targetColor) {
+            if (gap > 0) gaps.push(gap);
+            gap = 0;
+          } else if (c !== 'white') {
+            gap++;
           }
         }
-      }
-      
-      return { continued: streaksContinued, broken: streaksBroken };
-    };
-
-    const streakHistory = streakBreakAnalysis();
-    const streakBreakRate = streakHistory.broken / Math.max(1, streakHistory.continued + streakHistory.broken);
-
-    if (currentStreak.count >= 3 && currentStreak.color !== 'white') {
-      const oppositeColor = currentStreak.color === 'red' ? 'black' : 'red';
-      
-      if (streakBreakRate > 0.55) {
-        // History shows streaks tend to break
-        if (oppositeColor === 'red') {
-          redScore += currentStreak.count * 4 * streakBreakRate;
-          redReasons.push(`Sequência ${currentStreak.count}x${currentStreak.color} (${(streakBreakRate*100).toFixed(0)}% quebra)`);
-        } else {
-          blackScore += currentStreak.count * 4 * streakBreakRate;
-          blackReasons.push(`Sequência ${currentStreak.count}x${currentStreak.color} (${(streakBreakRate*100).toFixed(0)}% quebra)`);
-        }
-      } else if (currentStreak.count >= 5) {
-        // Long streaks tend to break regardless
-        if (oppositeColor === 'red') {
-          redScore += 15;
-          redReasons.push(`Sequência longa ${currentStreak.count}x - inversão provável`);
-        } else {
-          blackScore += 15;
-          blackReasons.push(`Sequência longa ${currentStreak.count}x - inversão provável`);
-        }
-      }
-    }
-
-    // 3. GAP ANALYSIS - Time since last occurrence
-    const getGap = (colors: string[], targetColor: string) => {
-      const idx = colors.indexOf(targetColor);
-      return idx === -1 ? colors.length : idx;
-    };
-
-    const redGap = getGap(last50Colors, 'red');
-    const blackGap = getGap(last50Colors, 'black');
-    
-    // Calculate average gaps for context
-    const calculateAverageGap = (colors: string[], targetColor: string) => {
-      let gaps: number[] = [];
-      let currentGap = 0;
-      
-      for (const color of colors) {
-        if (color === targetColor) {
-          if (currentGap > 0) gaps.push(currentGap);
-          currentGap = 0;
-        } else if (color !== 'white') {
-          currentGap++;
-        }
-      }
-      
-      return gaps.length > 0 ? gaps.reduce((a, b) => a + b, 0) / gaps.length : 3;
-    };
-
-    const avgRedGap = calculateAverageGap(last100Colors, 'red');
-    const avgBlackGap = calculateAverageGap(last100Colors, 'black');
-
-    if (redGap > avgRedGap * 1.5) {
-      redScore += Math.min(20, (redGap - avgRedGap) * 3);
-      redReasons.push(`Gap vermelho: ${redGap} (média ${avgRedGap.toFixed(1)})`);
-    }
-    
-    if (blackGap > avgBlackGap * 1.5) {
-      blackScore += Math.min(20, (blackGap - avgBlackGap) * 3);
-      blackReasons.push(`Gap preto: ${blackGap} (média ${avgBlackGap.toFixed(1)})`);
-    }
-
-    // 4. ALTERNATION PATTERN ANALYSIS
-    const analyzeAlternation = (colors: string[]) => {
-      let alternations = 0;
-      const nonWhite = colors.filter(c => c !== 'white').slice(0, 10);
-      
-      for (let i = 0; i < nonWhite.length - 1; i++) {
-        if (nonWhite[i] !== nonWhite[i + 1]) {
-          alternations++;
-        }
-      }
-      
-      return alternations / Math.max(1, nonWhite.length - 1);
-    };
-
-    const alternationRate = analyzeAlternation(last20Colors);
-    
-    if (alternationRate > 0.7) {
-      // High alternation - predict opposite of last
-      const opposite = lastColor === 'red' ? 'black' : 'red';
-      if (opposite === 'red') {
-        redScore += 12;
-        redReasons.push(`Alta alternância (${(alternationRate*100).toFixed(0)}%)`);
-      } else {
-        blackScore += 12;
-        blackReasons.push(`Alta alternância (${(alternationRate*100).toFixed(0)}%)`);
-      }
-    } else if (alternationRate < 0.3) {
-      // Low alternation - predict same as dominant trend
-      const dominant = last10Stats.red > last10Stats.black ? 'red' : 'black';
-      if (dominant === 'red') {
-        redScore += 8;
-        redReasons.push(`Baixa alternância - tendência ${dominant}`);
-      } else {
-        blackScore += 8;
-        blackReasons.push(`Baixa alternância - tendência ${dominant}`);
-      }
-    }
-
-    // 5. WEIGHTED MOMENTUM ANALYSIS
-    const calculateMomentum = () => {
-      // Recent rounds have more weight
-      let redMomentum = 0;
-      let blackMomentum = 0;
-      
-      const weights = [5, 4, 3, 2.5, 2, 1.5, 1.2, 1, 0.8, 0.6]; // Decreasing weights
-      
-      for (let i = 0; i < Math.min(10, last20Colors.length); i++) {
-        const color = last20Colors[i];
-        const weight = weights[i] || 0.5;
         
-        if (color === 'red') {
-          redMomentum += weight;
-        } else if (color === 'black') {
-          blackMomentum += weight;
-        }
-      }
+        return gaps.length > 0 ? gaps.reduce((a, b) => a + b, 0) / gaps.length : 3;
+      };
       
-      return { red: redMomentum, black: blackMomentum };
+      return {
+        redGap,
+        blackGap,
+        avgRedGap: calcAvgGap('red'),
+        avgBlackGap: calcAvgGap('black')
+      };
     };
 
-    const momentum = calculateMomentum();
-    const momentumDiff = Math.abs(momentum.red - momentum.black);
+    const gaps = calculateGaps();
     
-    if (momentumDiff > 5) {
-      // Strong momentum - consider mean reversion
-      const dominantMomentum = momentum.red > momentum.black ? 'red' : 'black';
-      const weakMomentum = dominantMomentum === 'red' ? 'black' : 'red';
-      
-      // After strong momentum, expect some reversion
-      if (weakMomentum === 'red') {
-        redScore += momentumDiff * 1.5;
-        redReasons.push(`Reversão de momentum (${dominantMomentum} forte)`);
-      } else {
-        blackScore += momentumDiff * 1.5;
-        blackReasons.push(`Reversão de momentum (${dominantMomentum} forte)`);
-      }
+    if (gaps.redGap > gaps.avgRedGap * 1.8) {
+      redScore += Math.min(20, (gaps.redGap - gaps.avgRedGap) * 4);
+      redReasons.push(`Gap vermelho: ${gaps.redGap} (média ${gaps.avgRedGap.toFixed(1)})`);
+    }
+    
+    if (gaps.blackGap > gaps.avgBlackGap * 1.8) {
+      blackScore += Math.min(20, (gaps.blackGap - gaps.avgBlackGap) * 4);
+      blackReasons.push(`Gap preto: ${gaps.blackGap} (média ${gaps.avgBlackGap.toFixed(1)})`);
     }
 
-    // 6. PATTERN SEQUENCE MATCHING (3-gram and 4-gram)
-    const findPatternMatches = (colors: string[], gramSize: number) => {
-      const currentGram = colors.slice(0, gramSize).join('-');
-      let redFollows = 0;
-      let blackFollows = 0;
-      
-      for (let i = gramSize; i < colors.length - 1; i++) {
-        const gram = colors.slice(i, i + gramSize).join('-');
-        if (gram === currentGram) {
-          const nextColor = colors[i - 1]; // Color that came after this pattern
-          if (nextColor === 'red') redFollows++;
-          else if (nextColor === 'black') blackFollows++;
-        }
-      }
-      
-      return { red: redFollows, black: blackFollows, total: redFollows + blackFollows };
+    // ==================== 8. EQUILIBRIUM ANALYSIS ====================
+    const countColors = (colors: string[]) => {
+      const red = colors.filter(c => c === 'red').length;
+      const black = colors.filter(c => c === 'black').length;
+      const white = colors.filter(c => c === 'white').length;
+      return { red, black, white };
     };
 
-    const pattern3 = findPatternMatches(last100Colors, 3);
-    const pattern4 = findPatternMatches(last100Colors, 4);
-
-    if (pattern3.total >= 3) {
-      const redRate = pattern3.red / pattern3.total;
-      const blackRate = pattern3.black / pattern3.total;
+    const stats30 = countColors(colors30);
+    const stats60 = countColors(colors60);
+    
+    // In a balanced game, red and black should be roughly equal
+    const total30 = stats30.red + stats30.black;
+    if (total30 > 20) {
+      const redPct30 = stats30.red / total30;
       
-      if (redRate > 0.6) {
-        redScore += (redRate - 0.5) * 30;
-        redReasons.push(`Padrão 3-gram: ${(redRate*100).toFixed(0)}% vermelho (${pattern3.total} ocorrências)`);
-      } else if (blackRate > 0.6) {
-        blackScore += (blackRate - 0.5) * 30;
-        blackReasons.push(`Padrão 3-gram: ${(blackRate*100).toFixed(0)}% preto (${pattern3.total} ocorrências)`);
+      if (redPct30 < 0.4) {
+        redScore += (0.5 - redPct30) * 25;
+        redReasons.push(`Equilíbrio: vermelho ${(redPct30 * 100).toFixed(0)}% em 30 rodadas`);
+      } else if (redPct30 > 0.6) {
+        blackScore += (redPct30 - 0.5) * 25;
+        blackReasons.push(`Equilíbrio: preto ${((1 - redPct30) * 100).toFixed(0)}% em 30 rodadas`);
       }
     }
 
-    if (pattern4.total >= 2) {
-      const redRate = pattern4.red / pattern4.total;
-      const blackRate = pattern4.black / pattern4.total;
-      
-      if (redRate > 0.6) {
-        redScore += (redRate - 0.5) * 40;
-        redReasons.push(`Padrão 4-gram: ${(redRate*100).toFixed(0)}% vermelho`);
-      } else if (blackRate > 0.6) {
-        blackScore += (blackRate - 0.5) * 40;
-        blackReasons.push(`Padrão 4-gram: ${(blackRate*100).toFixed(0)}% preto`);
-      }
-    }
-
-    // 7. LEARNED PATTERNS INTEGRATION
-    const matchedLearnedPatterns = (learnedPatterns || []).filter(lp => {
-      // Match sequence patterns
+    // ==================== 9. LEARNED PATTERNS ====================
+    const matchedPatterns = (learnedPatterns || []).filter(lp => {
       if (lp.pattern_type === 'sequence_3') {
-        const seq = last20Colors.slice(0, 3).join('-');
-        return lp.pattern_key === seq;
+        const seq = colors30.slice(0, 3).join('-');
+        return lp.pattern_key === `sequence_3:${seq}`;
       }
-      // Match streak patterns
       if (lp.pattern_type === 'streak') {
-        return lp.pattern_key === `${currentStreak.color}_${currentStreak.count}`;
+        return lp.pattern_key === `streak:${currentStreak.color}_${currentStreak.count}`;
       }
-      // Match dominance patterns
       if (lp.pattern_type === 'dominance_20') {
-        const dominant = last20Stats.red > last20Stats.black ? 'red' : 'black';
-        const ratio = Math.max(last20Stats.red, last20Stats.black) / 20;
-        return lp.pattern_key === `${dominant}_${Math.round(ratio * 100)}`;
+        const dominant = stats30.red > stats30.black ? 'red' : 'black';
+        const pct = Math.round((Math.max(stats30.red, stats30.black) / (stats30.red + stats30.black)) * 100);
+        return lp.pattern_key === `dominance_20:${dominant}_${pct}`;
       }
       return false;
     });
 
-    // Apply learned pattern scores
-    for (const pattern of matchedLearnedPatterns) {
+    for (const pattern of matchedPatterns) {
       if (pattern.times_seen >= 5 && pattern.success_rate > 55) {
-        const weight = (pattern.success_rate / 100) * Math.log(pattern.times_seen + 1) * 5;
-        const data = pattern.pattern_data;
+        const weight = (pattern.success_rate / 100) * Math.min(5, Math.log(pattern.times_seen + 1)) * 4;
+        const data = pattern.pattern_data as any;
         
-        if (data.lastSuccessfulPrediction === 'red') {
+        if (data?.lastSuccessfulPrediction === 'red') {
           redScore += weight;
-          redReasons.push(`Padrão aprendido: ${pattern.pattern_key} (${pattern.success_rate.toFixed(0)}%)`);
-        } else if (data.lastSuccessfulPrediction === 'black') {
+          redReasons.push(`Aprendido: ${pattern.pattern_key.split(':')[0]} (${pattern.success_rate.toFixed(0)}%)`);
+        } else if (data?.lastSuccessfulPrediction === 'black') {
           blackScore += weight;
-          blackReasons.push(`Padrão aprendido: ${pattern.pattern_key} (${pattern.success_rate.toFixed(0)}%)`);
+          blackReasons.push(`Aprendido: ${pattern.pattern_key.split(':')[0]} (${pattern.success_rate.toFixed(0)}%)`);
         }
       }
     }
 
-    // 8. EQUILIBRIUM ANALYSIS - Long-term balance
-    const equilibriumBias = () => {
-      // In theory, red and black should be ~equal over time
-      const total = last100Stats.red + last100Stats.black;
-      if (total < 50) return { color: null, strength: 0 };
-      
-      const redPct = last100Stats.red / total;
-      const expectedPct = 0.5;
-      const deviation = redPct - expectedPct;
-      
-      // If significant deviation, expect regression to mean
-      if (Math.abs(deviation) > 0.08) {
-        const underdog = deviation > 0 ? 'black' : 'red';
-        return { color: underdog, strength: Math.abs(deviation) * 100 };
-      }
-      
-      return { color: null, strength: 0 };
-    };
-
-    const equilibrium = equilibriumBias();
-    if (equilibrium.color && equilibrium.strength > 5) {
-      if (equilibrium.color === 'red') {
-        redScore += equilibrium.strength * 0.8;
-        redReasons.push(`Equilíbrio: vermelho sub-representado`);
-      } else {
-        blackScore += equilibrium.strength * 0.8;
-        blackReasons.push(`Equilíbrio: preto sub-representado`);
-      }
-    }
-
-    // 9. RECALIBRATION MODE ADJUSTMENTS
+    // ==================== 10. RECALIBRATION MODE ====================
     if (recalibrationMode) {
-      console.log('Applying recalibration adjustments...');
-      // Invert recent losing strategy
-      const recentLosses = completedSignals
+      console.log('Applying recalibration...');
+      
+      const recentLosses = (pastSignals || [])
         .filter(s => s.status === 'loss')
         .slice(0, 3);
       
-      let lossRedCount = 0;
-      let lossBlackCount = 0;
+      let lossRed = recentLosses.filter(l => l.predicted_color === 'red').length;
+      let lossBlack = recentLosses.filter(l => l.predicted_color === 'black').length;
       
-      for (const loss of recentLosses) {
-        if (loss.predicted_color === 'red') lossRedCount++;
-        else lossBlackCount++;
-      }
-      
-      // Reduce score of color that kept failing
-      if (lossRedCount > lossBlackCount) {
-        redScore *= 0.6;
-        blackScore *= 1.3;
-        blackReasons.push(`Recalibração: inversão de estratégia`);
-      } else if (lossBlackCount > lossRedCount) {
-        blackScore *= 0.6;
-        redScore *= 1.3;
-        redReasons.push(`Recalibração: inversão de estratégia`);
+      if (lossRed > lossBlack) {
+        redScore *= 0.5;
+        blackScore *= 1.4;
+        blackReasons.push('Recalibração: inversão estratégica');
+      } else if (lossBlack > lossRed) {
+        blackScore *= 0.5;
+        redScore *= 1.4;
+        redReasons.push('Recalibração: inversão estratégica');
       }
     }
 
     // ==================== FINAL PREDICTION ====================
-    
     const predictedColor = redScore > blackScore ? 'red' : 'black';
     const scoreDiff = Math.abs(redScore - blackScore);
     const totalScore = redScore + blackScore;
     
-    // Calculate confidence based on score differential
-    let confidence = 60 + Math.min(35, scoreDiff * 2);
-    
-    // Adjust confidence based on data quality
-    if (matchedLearnedPatterns.length > 0) {
-      confidence += 3;
-    }
-    if (pattern3.total >= 5 || pattern4.total >= 3) {
-      confidence += 5;
-    }
-    if (winRate > 55 && completedSignals.length >= 20) {
-      confidence += 3;
+    // Calculate confidence based on score difference
+    let confidence = 50;
+    if (totalScore > 0) {
+      confidence = Math.min(95, 50 + (scoreDiff / totalScore) * 50);
     }
     
-    confidence = Math.min(95, Math.max(60, confidence));
-    
-    const winningReasons = predictedColor === 'red' ? redReasons : blackReasons;
-    const topReasons = winningReasons.slice(0, 4);
+    // Minimum confidence threshold
+    if (scoreDiff < 5) {
+      confidence = Math.max(45, confidence - 15);
+    }
 
-    const prediction = {
-      predicted_color: predictedColor,
-      confidence: Math.round(confidence),
-      reason: topReasons.join(' | ') || 'Análise estatística avançada',
-      analysis: `Score: R${redScore.toFixed(1)} vs B${blackScore.toFixed(1)}. Padrões: ${matchedLearnedPatterns.length}. WinRate: ${winRate.toFixed(1)}%`,
-      protections: confidence >= 80 ? 2 : confidence >= 70 ? 2 : 3,
-      should_bet: confidence >= 65 && scoreDiff >= 5,
-      patterns_used: topReasons,
-      scores: { red: redScore, black: blackScore }
+    const winningReasons = predictedColor === 'red' ? redReasons : blackReasons;
+    const reasonStr = winningReasons.slice(0, 4).join('; ');
+
+    console.log(`Prediction: ${predictedColor} | Confidence: ${confidence.toFixed(1)}%`);
+    console.log(`Red Score: ${redScore.toFixed(1)} | Black Score: ${blackScore.toFixed(1)}`);
+    console.log(`Reasons: ${reasonStr}`);
+
+    // Save prediction to database
+    const { data: savedSignal, error: saveError } = await supabase
+      .from('prediction_signals')
+      .insert({
+        predicted_color: predictedColor,
+        confidence: Math.round(confidence),
+        reason: reasonStr || 'Análise multi-fator',
+        protections: 2,
+        signal_timestamp: new Date().toISOString(),
+        status: 'pending'
+      })
+      .select()
+      .single();
+
+    if (saveError) {
+      console.error('Error saving signal:', saveError);
+    }
+
+    const response = {
+      success: true,
+      prediction: {
+        id: savedSignal?.id || `pred_${Date.now()}`,
+        predictedColor,
+        confidence: Math.round(confidence),
+        reason: reasonStr || 'Análise multi-fator',
+        protections: 2,
+        timestamp: new Date(),
+        analysis: {
+          time: { hour: currentHour, minute: currentMinute },
+          streak: currentStreak,
+          cycle: cycleAnalysis,
+          gaps,
+          scores: { red: redScore.toFixed(1), black: blackScore.toFixed(1) }
+        }
+      }
     };
 
-    console.log('Advanced prediction:', JSON.stringify(prediction, null, 2));
-
-    // Try AI enhancement if available
-    let finalPrediction = prediction;
-    
-    try {
-      const aiPrompt = `Analise esta previsão estatística e confirme ou ajuste:
-Previsão atual: ${prediction.predicted_color} (${prediction.confidence}%)
-Razões: ${topReasons.join(', ')}
-Últimas 10 cores: ${last10Colors.join(', ')}
-Sequência atual: ${currentStreak.count}x ${currentStreak.color}
-Stats 20: R=${last20Stats.red} B=${last20Stats.black}
-Score: Vermelho=${redScore.toFixed(1)}, Preto=${blackScore.toFixed(1)}
-${recalibrationMode ? 'MODO RECALIBRAÇÃO - considere inverter!' : ''}
-
-Responda APENAS em JSON: {"predicted_color": "red" ou "black", "confidence": 60-95, "reason": "explicação curta", "should_confirm": true/false}`;
-
-      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
-          messages: [
-            { role: 'system', content: 'Você é um analista de padrões. Responda SOMENTE em JSON válido, sem markdown.' },
-            { role: 'user', content: aiPrompt }
-          ],
-        }),
-      });
-
-      if (response.ok) {
-        const aiData = await response.json();
-        const aiResponse = aiData.choices?.[0]?.message?.content;
-        
-        try {
-          let jsonStr = aiResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-          const aiPrediction = JSON.parse(jsonStr);
-          
-          // Blend AI with statistical prediction
-          if (aiPrediction.should_confirm === false && aiPrediction.predicted_color !== prediction.predicted_color) {
-            console.log('AI suggests different color, blending predictions...');
-            // If AI strongly disagrees, reduce confidence
-            finalPrediction.confidence = Math.max(60, finalPrediction.confidence - 10);
-            finalPrediction.reason = `${prediction.reason} | IA: ${aiPrediction.reason}`;
-          } else if (aiPrediction.should_confirm) {
-            // AI confirms, boost confidence slightly
-            finalPrediction.confidence = Math.min(95, finalPrediction.confidence + 5);
-          }
-        } catch (e) {
-          console.log('AI response parse error, using statistical prediction');
-        }
-      } else {
-        console.log('AI not available, using advanced statistical prediction');
-      }
-    } catch (aiError) {
-      console.log('AI enhancement skipped:', aiError);
-    }
-
-    // Save patterns for learning
-    const currentPatterns = [
-      { type: 'sequence_3', key: last20Colors.slice(0, 3).join('-'), data: { lastColors: last20Colors.slice(0, 3) } },
-      { type: 'streak', key: `${currentStreak.color}_${currentStreak.count}`, data: currentStreak },
-      { type: 'dominance_20', key: `${last20Stats.red > last20Stats.black ? 'red' : 'black'}_${Math.round(Math.max(last20Stats.red, last20Stats.black) / 20 * 100)}`, data: last20Stats }
-    ];
-
-    for (const pattern of currentPatterns) {
-      try {
-        await supabase
-          .from('learned_patterns')
-          .upsert({
-            pattern_type: pattern.type,
-            pattern_key: pattern.key,
-            pattern_data: {
-              ...pattern.data,
-              lastPrediction: finalPrediction.predicted_color,
-              lastRoundId: roundIdentifiers[0]?.uniqueKey,
-              timestamp: new Date().toISOString()
-            },
-            times_seen: 1,
-            times_correct: 0,
-            success_rate: 0
-          }, {
-            onConflict: 'pattern_type,pattern_key',
-            ignoreDuplicates: false
-          });
-      } catch (e) {
-        console.error('Error saving pattern:', e);
-      }
-    }
-
-    const lastRound = recentRounds && recentRounds.length > 0 ? {
-      number: recentRounds[0].number,
-      color: recentRounds[0].color,
-      blaze_id: recentRounds[0].blaze_id,
-      uniqueKey: roundIdentifiers[0]?.uniqueKey
-    } : null;
-
-    return new Response(JSON.stringify({
-      prediction: finalPrediction,
-      lastRound,
-      currentPatterns: currentPatterns.map(p => ({ type: p.type, key: p.key })),
-      stats: {
-        last10Stats,
-        last20Stats,
-        last50Stats,
-        currentStreak,
-        winRate: winRate.toFixed(1),
-        totalSignals: completedSignals.length,
-        learnedPatternsCount: (learnedPatterns || []).length,
-        matchedPatternsCount: matchedLearnedPatterns.length,
-        algorithmScores: { red: redScore, black: blackScore },
-        markovProbabilities: markovChain[lastColor] || {},
-        streakBreakRate: streakBreakRate,
-        alternationRate,
-        patterns: { gram3: pattern3, gram4: pattern4 }
-      },
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    return new Response(JSON.stringify(response), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
   } catch (error) {
-    console.error('Error in ai-predict:', error);
-    return new Response(JSON.stringify({ 
-      error: error instanceof Error ? error.message : 'Unknown error' 
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    console.error('AI Predict Error:', error);
+    return new Response(
+      JSON.stringify({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Prediction failed' 
+      }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   }
 });
