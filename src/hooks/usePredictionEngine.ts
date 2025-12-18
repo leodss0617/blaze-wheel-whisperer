@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { useAlertSound } from '@/hooks/useAlertSound';
 import { Color, PredictionSignal, WhiteProtection, PredictionResult } from '@/types/prediction';
 import { generatePrediction } from '@/lib/analysis/hybridPredictor';
 import { analyzeWhiteGap } from '@/lib/analysis/gapAnalysis';
@@ -24,6 +25,7 @@ export function usePredictionEngine({
   intervalRounds = 2 
 }: UsePredictionEngineProps) {
   const { toast } = useToast();
+  const { playAlertSound, playWhiteProtectionSound } = useAlertSound();
   
   const [currentSignal, setCurrentSignal] = useState<PredictionSignal | null>(null);
   const [whiteProtection, setWhiteProtection] = useState<WhiteProtection | null>(null);
@@ -120,6 +122,15 @@ export function usePredictionEngine({
         await savePredictionToDb(result.signal);
         
         const isHighConfidence = result.signal.confidence >= 75;
+        
+        // Play alert sound for new signal
+        playAlertSound(isHighConfidence);
+        
+        // Play white protection sound if needed
+        if (whiteProtection.shouldProtect) {
+          setTimeout(() => playWhiteProtectionSound(whiteProtection.confidence), 500);
+        }
+        
         toast({
           title: isHighConfidence ? '🔥 SINAL FORTE!' : '🎯 Novo Sinal',
           description: `${result.signal.color === 'red' ? 'VERMELHO' : 'PRETO'} - ${result.signal.confidence}%`,
@@ -210,6 +221,9 @@ export function usePredictionEngine({
         setGaleLevel(nextGale);
         setPredictionState(nextGale === 1 ? 'gale1' : 'gale2');
         predictionRoundIndex.current = colors.length;
+        
+        // Play gale alert sound (urgent tone)
+        playAlertSound(true);
         
         toast({
           title: `⚠️ Gale ${nextGale}`,
