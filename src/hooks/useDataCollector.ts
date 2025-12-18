@@ -49,11 +49,16 @@ export function useDataCollector() {
         return;
       }
 
-      if (!data?.rounds?.length) {
+      // Proxy returns array directly, or it might be wrapped
+      const records = Array.isArray(data) ? data : (data?.rounds || data?.records || []);
+      
+      if (!records.length) {
+        console.log('No records received from proxy:', data);
         setError('Sem dados da Blaze');
         return;
       }
 
+      console.log(`✅ Received ${records.length} records from Blaze`);
       setIsConnected(true);
       setError(null);
       setLastUpdate(new Date());
@@ -61,7 +66,7 @@ export function useDataCollector() {
       // Process new rounds
       const newRounds: Round[] = [];
       
-      for (const game of data.rounds) {
+      for (const game of records) {
         const roundId = createRoundId(game);
         
         if (!processedIds.current.has(roundId)) {
