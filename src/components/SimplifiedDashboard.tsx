@@ -227,13 +227,14 @@ export function SimplifiedDashboard() {
           <CardTitle className="text-lg">Últimas Rodadas ({rounds.length})</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-1">
-            {rounds.slice(0, 50).map((round, idx) => (
+          <div className="flex flex-wrap gap-1.5">
+            {rounds.slice(0, 50).map((round) => (
               <ColorBall 
                 key={round.id} 
                 color={round.color} 
                 size="sm"
                 number={round.number}
+                showNumber={true}
               />
             ))}
           </div>
