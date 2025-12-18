@@ -22,7 +22,9 @@ export function SimplifiedDashboard() {
     whiteProtection, 
     isAnalyzing, 
     lastAnalysis,
-    stats 
+    stats,
+    galeLevel,
+    predictionState
   } = usePredictionEngine({ 
     colors, 
     numbers, 
@@ -72,6 +74,11 @@ export function SimplifiedDashboard() {
             <CardTitle className="text-lg flex items-center gap-2">
               <Target className="w-5 h-5" />
               Previsão Atual
+              {galeLevel > 0 && (
+                <Badge variant="destructive" className="ml-2">
+                  GALE {galeLevel}
+                </Badge>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -84,7 +91,10 @@ export function SimplifiedDashboard() {
                       <p className="text-2xl font-bold uppercase">
                         {currentSignal.color === 'red' ? 'VERMELHO' : 'PRETO'}
                       </p>
-                      <p className="text-sm text-muted-foreground">{currentSignal.strategy}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {currentSignal.strategy}
+                        {galeLevel > 0 && ` • Tentativa ${galeLevel + 1}/3`}
+                      </p>
                     </div>
                   </div>
                   <Badge 
@@ -96,8 +106,21 @@ export function SimplifiedDashboard() {
                 </div>
                 <Progress value={currentSignal.confidence} className="h-2" />
                 <p className="text-sm text-muted-foreground">{currentSignal.reason}</p>
+                
+                {/* Gale Progress Indicator */}
+                <div className="flex gap-2">
+                  <div className={`flex-1 h-2 rounded ${predictionState === 'active' || currentSignal.status === 'won' ? 'bg-green-500' : predictionState === 'gale1' || predictionState === 'gale2' ? 'bg-red-500' : 'bg-muted'}`} />
+                  <div className={`flex-1 h-2 rounded ${predictionState === 'gale1' && currentSignal.status !== 'won' ? 'bg-yellow-500' : galeLevel >= 1 && currentSignal.status === 'won' ? 'bg-green-500' : galeLevel >= 1 ? 'bg-red-500' : 'bg-muted'}`} />
+                  <div className={`flex-1 h-2 rounded ${predictionState === 'gale2' && currentSignal.status !== 'won' ? 'bg-orange-500' : galeLevel >= 2 && currentSignal.status === 'won' ? 'bg-green-500' : galeLevel >= 2 ? 'bg-red-500' : 'bg-muted'}`} />
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Entrada</span>
+                  <span>Gale 1</span>
+                  <span>Gale 2</span>
+                </div>
+                
                 {currentSignal.status !== 'pending' && (
-                  <Badge variant={currentSignal.status === 'won' ? 'default' : 'destructive'}>
+                  <Badge variant={currentSignal.status === 'won' ? 'default' : 'destructive'} className="w-full justify-center py-2">
                     {currentSignal.status === 'won' ? '✅ ACERTO' : '❌ ERRO'}
                   </Badge>
                 )}
@@ -110,7 +133,12 @@ export function SimplifiedDashboard() {
                     <span>Analisando...</span>
                   </div>
                 ) : (
-                  <p className="text-muted-foreground">Aguardando dados...</p>
+                  <div>
+                    <p className="text-muted-foreground">Aguardando próximo sinal...</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {colors.length < 15 ? `Coletando dados (${colors.length}/15)` : 'Sistema pronto'}
+                    </p>
+                  </div>
                 )}
               </div>
             )}

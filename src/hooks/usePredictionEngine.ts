@@ -8,11 +8,13 @@ import { analyzeWhiteGap } from '@/lib/analysis/gapAnalysis';
 import { LearnedPattern, parsePatternFromDb } from '@/lib/analysis/patternMatcher';
 import { supabase } from '@/integrations/supabase/client';
 
+export type PredictionState = 'analyzing' | 'active' | 'gale1' | 'gale2';
+
 interface UsePredictionEngineProps {
   colors: Color[];
   numbers: number[];
   enabled: boolean;
-  intervalRounds: number; // Generate prediction every N rounds
+  intervalRounds: number;
 }
 
 export function usePredictionEngine({ 
@@ -28,6 +30,8 @@ export function usePredictionEngine({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [lastAnalysis, setLastAnalysis] = useState<PredictionResult['analysis'] | null>(null);
   const [stats, setStats] = useState({ wins: 0, losses: 0 });
+  const [galeLevel, setGaleLevel] = useState<0 | 1 | 2>(0);
+  const [predictionState, setPredictionState] = useState<PredictionState>('analyzing');
   
   const lastRoundCount = useRef(0);
   const pendingVerification = useRef<PredictionSignal | null>(null);
@@ -75,6 +79,7 @@ export function usePredictionEngine({
     if (colors.length < 15 || isAnalyzing) return;
     
     setIsAnalyzing(true);
+    setPredictionState('analyzing');
     
     try {
       const { hour, minute } = getBrasiliaTime();
@@ -106,6 +111,8 @@ export function usePredictionEngine({
       
       if (result.signal) {
         setCurrentSignal(result.signal);
+        setGaleLevel(0);
+        setPredictionState('active');
         pendingVerification.current = result.signal;
         predictionRoundIndex.current = colors.length;
         
@@ -160,45 +167,87 @@ export function usePredictionEngine({
     const actualColor = colors[0]; // Most recent color
     const predicted = pendingVerification.current;
     
-    // Skip white outcomes for win/loss calculation
+    // Skip white outcomes - wait for next round
     if (actualColor === 'white') {
-      console.log('⚪ Branco - aguardando próxima rodada');
+      console.log('⚪ Branco - aguardando próxima rodada (gale mantido)');
+      predictionRoundIndex.current = colors.length;
       return;
     }
     
     const won = actualColor === predicted.color;
     
-    setStats(prev => ({
-      wins: won ? prev.wins + 1 : prev.wins,
-      losses: won ? prev.losses : prev.losses + 1
-    }));
-    
-    // Update signal status
-    setCurrentSignal(prev => prev ? { ...prev, status: won ? 'won' : 'lost' } : null);
-    
-    // Update in database
-    updatePredictionResult(predicted.id, actualColor, won);
-    
-    // Update learned patterns
-    updateLearnedPatterns(colors, actualColor, won);
-    
-    toast({
-      title: won ? '✅ ACERTO!' : '❌ ERRO',
-      description: `Previsto: ${predicted.color} | Real: ${actualColor}`,
-      variant: won ? 'default' : 'destructive'
-    });
-    
-    console.log(won ? '✅ Previsão CORRETA' : '❌ Previsão INCORRETA', { predicted: predicted.color, actual: actualColor });
-    
-    // Clear pending verification
-    pendingVerification.current = null;
-    predictionRoundIndex.current = null;
-    
-    // Clear signal after short delay
-    setTimeout(() => {
-      setCurrentSignal(null);
-    }, 3000);
-  }, [colors, toast]);
+    if (won) {
+      // WIN - count as success
+      setStats(prev => ({ wins: prev.wins + 1, losses: prev.losses }));
+      setCurrentSignal(prev => prev ? { ...prev, status: 'won' } : null);
+      
+      toast({
+        title: galeLevel === 0 ? '✅ ACERTO!' : `✅ ACERTO no Gale ${galeLevel}!`,
+        description: `Previsto: ${predicted.color} | Real: ${actualColor}`,
+      });
+      
+      console.log(`✅ Previsão CORRETA ${galeLevel > 0 ? `(Gale ${galeLevel})` : ''}`, { predicted: predicted.color, actual: actualColor });
+      
+      // Update in database
+      updatePredictionResult(predicted.id, actualColor, true);
+      updateLearnedPatterns(colors, actualColor, true);
+      
+      // Reset state
+      pendingVerification.current = null;
+      predictionRoundIndex.current = null;
+      setGaleLevel(0);
+      
+      setTimeout(() => {
+        setCurrentSignal(null);
+        setPredictionState('analyzing');
+      }, 3000);
+      
+    } else {
+      // LOSS - check gale level
+      if (galeLevel < 2) {
+        // Move to next gale
+        const nextGale = (galeLevel + 1) as 1 | 2;
+        setGaleLevel(nextGale);
+        setPredictionState(nextGale === 1 ? 'gale1' : 'gale2');
+        predictionRoundIndex.current = colors.length;
+        
+        toast({
+          title: `⚠️ Gale ${nextGale}`,
+          description: `Continuando com ${predicted.color === 'red' ? 'VERMELHO' : 'PRETO'}`,
+          variant: 'destructive'
+        });
+        
+        console.log(`⚠️ Gale ${nextGale} ativado`);
+        
+      } else {
+        // All gales exhausted - count as loss
+        setStats(prev => ({ wins: prev.wins, losses: prev.losses + 1 }));
+        setCurrentSignal(prev => prev ? { ...prev, status: 'lost' } : null);
+        
+        toast({
+          title: '❌ LOSS (após 2 gales)',
+          description: `Previsto: ${predicted.color} | Real: ${actualColor}`,
+          variant: 'destructive'
+        });
+        
+        console.log('❌ Previsão INCORRETA após 2 gales', { predicted: predicted.color, actual: actualColor });
+        
+        // Update in database
+        updatePredictionResult(predicted.id, actualColor, false);
+        updateLearnedPatterns(colors, actualColor, false);
+        
+        // Reset state
+        pendingVerification.current = null;
+        predictionRoundIndex.current = null;
+        setGaleLevel(0);
+        
+        setTimeout(() => {
+          setCurrentSignal(null);
+          setPredictionState('analyzing');
+        }, 3000);
+      }
+    }
+  }, [colors, toast, galeLevel]);
 
   // Update prediction result in DB
   const updatePredictionResult = async (id: string, actualColor: Color, won: boolean) => {
@@ -240,10 +289,11 @@ export function usePredictionEngine({
     // Verify pending prediction first
     if (pendingVerification.current) {
       verifyPrediction();
+      return; // Don't generate new prediction while one is pending
     }
     
     // Check if it's time for new prediction
-    if (!pendingVerification.current && roundsSinceLastPrediction >= intervalRounds) {
+    if (roundsSinceLastPrediction >= intervalRounds) {
       lastRoundCount.current = currentCount;
       generateNewPrediction();
     }
@@ -255,6 +305,8 @@ export function usePredictionEngine({
     isAnalyzing,
     lastAnalysis,
     stats,
+    galeLevel,
+    predictionState,
     generateNewPrediction
   };
 }
