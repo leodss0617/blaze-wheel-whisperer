@@ -547,7 +547,7 @@ serve(async (req) => {
       }
     }
 
-    // ==================== 9. LEARNED PATTERNS ====================
+    // ==================== 9. LEARNED PATTERNS (ENHANCED) ====================
     const matchedPatterns = (learnedPatterns || []).filter(lp => {
       if (lp.pattern_type === 'sequence_3') {
         const seq = colors30.slice(0, 3).join('-');
@@ -561,42 +561,97 @@ serve(async (req) => {
         const pct = Math.round((Math.max(stats30.red, stats30.black) / (stats30.red + stats30.black)) * 100);
         return lp.pattern_key === `dominance_20:${dominant}_${pct}`;
       }
+      if (lp.pattern_type === 'number_sequence') {
+        const numSeq = numbers30.slice(0, 3).join('-');
+        return lp.pattern_key === `number_sequence:${numSeq}`;
+      }
       return false;
     });
 
     for (const pattern of matchedPatterns) {
-      if (pattern.times_seen >= 5 && pattern.success_rate > 55) {
-        const weight = (pattern.success_rate / 100) * Math.min(5, Math.log(pattern.times_seen + 1)) * 4;
+      if (pattern.times_seen >= 3 && pattern.success_rate > 50) {
+        // Higher weight for more reliable patterns
+        const reliabilityFactor = Math.min(1, pattern.times_seen / 20);
+        const successFactor = (pattern.success_rate - 50) / 50;
+        const weight = reliabilityFactor * successFactor * 25;
         const data = pattern.pattern_data as any;
         
         if (data?.lastSuccessfulPrediction === 'red') {
           redScore += weight;
-          redReasons.push(`Aprendido: ${pattern.pattern_key.split(':')[0]} (${pattern.success_rate.toFixed(0)}%)`);
+          redReasons.push(`Padrão aprendido (${pattern.success_rate.toFixed(0)}%, ${pattern.times_seen}x visto)`);
         } else if (data?.lastSuccessfulPrediction === 'black') {
           blackScore += weight;
-          blackReasons.push(`Aprendido: ${pattern.pattern_key.split(':')[0]} (${pattern.success_rate.toFixed(0)}%)`);
+          blackReasons.push(`Padrão aprendido (${pattern.success_rate.toFixed(0)}%, ${pattern.times_seen}x visto)`);
         }
       }
     }
 
-    // ==================== 10. RECALIBRATION MODE ====================
+    // ==================== 10. PERFORMANCE ANALYSIS ====================
+    // Analyze recent prediction accuracy
+    const recentPredictions = (pastSignals || []).slice(0, 30);
+    const verifiedPredictions = recentPredictions.filter(s => s.status === 'win' || s.status === 'loss');
+    
+    if (verifiedPredictions.length >= 10) {
+      const winRate = verifiedPredictions.filter(s => s.status === 'win').length / verifiedPredictions.length;
+      
+      // Analyze which color predictions are more accurate
+      const redPreds = verifiedPredictions.filter(s => s.predicted_color === 'red');
+      const blackPreds = verifiedPredictions.filter(s => s.predicted_color === 'black');
+      
+      if (redPreds.length >= 5) {
+        const redWinRate = redPreds.filter(s => s.status === 'win').length / redPreds.length;
+        if (redWinRate > 0.60) {
+          const boost = (redWinRate - 0.5) * 25;
+          redScore += boost;
+          redReasons.push(`Histórico vermelho: ${(redWinRate * 100).toFixed(0)}% acerto`);
+        } else if (redWinRate < 0.40) {
+          blackScore += 10;
+          blackReasons.push(`Vermelho errando: ${(redWinRate * 100).toFixed(0)}% acerto`);
+        }
+      }
+      
+      if (blackPreds.length >= 5) {
+        const blackWinRate = blackPreds.filter(s => s.status === 'win').length / blackPreds.length;
+        if (blackWinRate > 0.60) {
+          const boost = (blackWinRate - 0.5) * 25;
+          blackScore += boost;
+          blackReasons.push(`Histórico preto: ${(blackWinRate * 100).toFixed(0)}% acerto`);
+        } else if (blackWinRate < 0.40) {
+          redScore += 10;
+          redReasons.push(`Preto errando: ${(blackWinRate * 100).toFixed(0)}% acerto`);
+        }
+      }
+    }
+
+    // ==================== 11. CONSECUTIVE LOSS DETECTION ====================
+    const lastPredictions = (pastSignals || []).slice(0, 5);
+    const consecutiveLosses = lastPredictions.filter(s => s.status === 'loss').length;
+    
+    if (consecutiveLosses >= 2) {
+      // Reduce confidence when on losing streak
+      const penalty = consecutiveLosses * 5;
+      redScore = Math.max(0, redScore - penalty);
+      blackScore = Math.max(0, blackScore - penalty);
+    }
+
+    // ==================== 12. RECALIBRATION MODE ====================
     if (recalibrationMode) {
       console.log('Applying recalibration...');
       
       const recentLosses = (pastSignals || [])
         .filter(s => s.status === 'loss')
-        .slice(0, 3);
+        .slice(0, 5);
       
       let lossRed = recentLosses.filter(l => l.predicted_color === 'red').length;
       let lossBlack = recentLosses.filter(l => l.predicted_color === 'black').length;
       
       if (lossRed > lossBlack) {
-        redScore *= 0.5;
-        blackScore *= 1.4;
+        redScore *= 0.4;
+        blackScore *= 1.6;
         blackReasons.push('Recalibração: inversão estratégica');
       } else if (lossBlack > lossRed) {
-        blackScore *= 0.5;
-        redScore *= 1.4;
+        blackScore *= 0.4;
+        redScore *= 1.6;
         redReasons.push('Recalibração: inversão estratégica');
       }
     }
@@ -606,23 +661,35 @@ serve(async (req) => {
     const scoreDiff = Math.abs(redScore - blackScore);
     const totalScore = redScore + blackScore;
     
-    // Calculate confidence based on score difference
+    // Enhanced confidence calculation
     let confidence = 50;
     if (totalScore > 0) {
-      confidence = Math.min(95, 50 + (scoreDiff / totalScore) * 50);
+      // Base confidence from score difference
+      const diffRatio = scoreDiff / Math.max(totalScore, 1);
+      confidence = 50 + diffRatio * 40;
+      
+      // Boost confidence based on number of supporting reasons
+      const supportingReasons = predictedColor === 'red' ? redReasons.length : blackReasons.length;
+      if (supportingReasons >= 4) confidence += 5;
+      if (supportingReasons >= 6) confidence += 5;
+      
+      // Reduce confidence if signals are mixed
+      const opposingReasons = predictedColor === 'red' ? blackReasons.length : redReasons.length;
+      if (opposingReasons >= 3) confidence -= 5;
+      
+      // Clamp confidence
+      confidence = Math.min(95, Math.max(45, confidence));
     }
     
-    // Minimum confidence threshold
-    if (scoreDiff < 5) {
-      confidence = Math.max(45, confidence - 15);
-    }
+    // Should bet logic - more nuanced
+    const shouldBet = confidence >= 55 && scoreDiff >= 3;
 
     const winningReasons = predictedColor === 'red' ? redReasons : blackReasons;
-    const reasonStr = winningReasons.slice(0, 4).join('; ');
+    const reasonStr = winningReasons.slice(0, 5).join('; ');
 
-    console.log(`Prediction: ${predictedColor} | Confidence: ${confidence.toFixed(1)}%`);
+    console.log(`Prediction: ${predictedColor} | Confidence: ${confidence.toFixed(1)}% | Should bet: ${shouldBet}`);
     console.log(`Red Score: ${redScore.toFixed(1)} | Black Score: ${blackScore.toFixed(1)}`);
-    console.log(`Reasons: ${reasonStr}`);
+    console.log(`Reasons (${winningReasons.length}): ${reasonStr}`);
 
     // Save prediction to database
     const { data: savedSignal, error: saveError } = await supabase
