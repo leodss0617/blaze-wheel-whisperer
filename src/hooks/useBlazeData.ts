@@ -29,15 +29,15 @@ export function useBlazeData() {
   const [useAI, setUseAI] = useState(true);
   const [predictionInterval, setPredictionIntervalState] = useState(() => {
     const saved = localStorage.getItem('blaze-prediction-interval');
-    return saved ? parseInt(saved, 10) : 5; // Default 5 rounds (increased from 2)
+    return saved ? parseInt(saved, 10) : 2; // Default 2 rounds
   });
   
-  // Track the round number when the last prediction cycle completed
-  const lastCompletedRoundNumber = useRef<number | null>(null);
+  // Track the round count when the last prediction cycle completed
+  const lastCompletedRoundCount = useRef<number>(0);
   
-  // Minimum time between predictions (prevents spam)
+  // Minimum time between predictions (prevents spam) - reduced for faster response
   const lastPredictionTime = useRef<number>(0);
-  const MIN_PREDICTION_INTERVAL_MS = 30000; // 30 seconds minimum
+  const MIN_PREDICTION_INTERVAL_MS = 10000; // 10 seconds minimum (one round is ~30s)
   
   // State for showing rounds remaining until next prediction
   const [roundsUntilNextPrediction, setRoundsUntilNextPrediction] = useState<number>(0);
@@ -155,9 +155,9 @@ export function useBlazeData() {
     setSignals(prev => prev.map(s => s.id === signal.id ? updated : s));
     recordWin(actualColor);
     
-    // Mark this round as completed for interval counting
-    lastCompletedRoundNumber.current = lastRoundNumber;
-    console.log('Ciclo de previsão concluído na rodada:', lastRoundNumber);
+    // Mark this round count for interval counting
+    lastCompletedRoundCount.current = rounds.length;
+    console.log('Ciclo de previsão concluído na rodada:', lastRoundNumber, 'count:', rounds.length);
     
     // Calculate profit: win amount (2x current bet) minus total spent
     if (baseBet > 0) {
@@ -183,7 +183,7 @@ export function useBlazeData() {
     setPredictionState('analyzing');
     setGaleLevel(0);
     waitingForResult.current = false;
-  }, [updateSignalInDb, recordWin, toast, baseBet, galeLevel, calculateMartingaleBet, calculateTotalSpent]);
+  }, [updateSignalInDb, recordWin, toast, baseBet, galeLevel, calculateMartingaleBet, calculateTotalSpent, rounds.length]);
 
   // Handle loss - go to gale or reset
   const handleLoss = useCallback((signal: PredictionSignal, actualColor: BlazeColor, lastRoundNumber: number) => {
@@ -225,9 +225,9 @@ export function useBlazeData() {
       setSignals(prev => prev.map(s => s.id === signal.id ? updated : s));
       recordLoss(actualColor);
       
-      // Mark this round as completed for interval counting
-      lastCompletedRoundNumber.current = lastRoundNumber;
-      console.log('Ciclo de previsão concluído (LOSS) na rodada:', lastRoundNumber);
+      // Mark this round count for interval counting
+      lastCompletedRoundCount.current = rounds.length;
+      console.log('Ciclo de previsão concluído (LOSS) na rodada:', lastRoundNumber, 'count:', rounds.length);
       
       // Calculate total loss (all bets in the sequence)
       if (baseBet > 0) {
@@ -253,7 +253,7 @@ export function useBlazeData() {
       setGaleLevel(0);
       waitingForResult.current = false;
     }
-  }, [galeLevel, updateSignalInDb, saveSignalToDb, recordLoss, toast, baseBet, calculateTotalSpent]);
+  }, [galeLevel, updateSignalInDb, saveSignalToDb, recordLoss, toast, baseBet, calculateTotalSpent, rounds.length]);
 
   // Check result when new round arrives
   // Uses unique round key to ensure consecutive identical numbers are treated separately
@@ -291,14 +291,11 @@ export function useBlazeData() {
     const currentRoundNumber = lastRound.number;
     const now = Date.now();
     
-    // Calculate rounds until next prediction
-    let roundsRemaining = 0;
-    const isFirstPrediction = lastCompletedRoundNumber.current === null;
-    
-    if (!isFirstPrediction) {
-      const roundsPassed = Math.abs(currentRoundNumber - lastCompletedRoundNumber.current!);
-      roundsRemaining = Math.max(0, predictionInterval - roundsPassed);
-    }
+    // Calculate rounds until next prediction based on total round count (not roll numbers)
+    const currentRoundCount = currentRounds.length;
+    const isFirstPrediction = lastCompletedRoundCount.current === 0;
+    const roundsPassed = currentRoundCount - lastCompletedRoundCount.current;
+    const roundsRemaining = Math.max(0, predictionInterval - roundsPassed);
     setRoundsUntilNextPrediction(roundsRemaining);
     
     // Guards - be more strict to prevent spam

@@ -714,8 +714,10 @@ serve(async (req) => {
       prediction: {
         id: savedSignal?.id || `pred_${Date.now()}`,
         predictedColor,
+        predicted_color: predictedColor,
         confidence: Math.round(confidence),
         reason: reasonStr || 'Análise multi-fator',
+        should_bet: shouldBet,
         protections: 2,
         timestamp: new Date(),
         analysis: {
