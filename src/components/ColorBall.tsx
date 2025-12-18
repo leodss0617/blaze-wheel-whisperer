@@ -1,8 +1,9 @@
 import { cn } from '@/lib/utils';
 import { BlazeColor } from '@/types/blaze';
+import { Color } from '@/types/prediction';
 
 interface ColorBallProps {
-  color: BlazeColor;
+  color: BlazeColor | Color;
   number?: number;
   size?: 'xs' | 'sm' | 'md' | 'lg';
   showNumber?: boolean;
