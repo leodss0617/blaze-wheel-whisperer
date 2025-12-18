@@ -1,5 +1,33 @@
 import { useCallback, useRef } from 'react';
 
+// Helper to check if sounds are enabled in settings
+const isSoundEnabled = (): boolean => {
+  try {
+    const saved = localStorage.getItem('blaze-settings');
+    if (saved) {
+      const settings = JSON.parse(saved);
+      return settings.soundEnabled !== false;
+    }
+    return true; // Default to enabled
+  } catch {
+    return true;
+  }
+};
+
+// Helper to get sound volume from settings (0-100)
+const getSoundVolume = (): number => {
+  try {
+    const saved = localStorage.getItem('blaze-settings');
+    if (saved) {
+      const settings = JSON.parse(saved);
+      return (settings.soundVolume ?? 70) / 100;
+    }
+    return 0.7; // Default 70%
+  } catch {
+    return 0.7;
+  }
+};
+
 export function useAlertSound() {
   const audioContextRef = useRef<AudioContext | null>(null);
 
@@ -11,10 +39,13 @@ export function useAlertSound() {
   }, []);
 
   const playAlertSound = useCallback((isHighConfidence: boolean = false) => {
+    if (!isSoundEnabled()) return;
+    
     try {
       const ctx = getAudioContext();
       const oscillator = ctx.createOscillator();
       const gainNode = ctx.createGain();
+      const volume = getSoundVolume();
       
       oscillator.connect(gainNode);
       gainNode.connect(ctx.destination);
@@ -24,14 +55,14 @@ export function useAlertSound() {
         oscillator.frequency.setValueAtTime(440, ctx.currentTime);
         oscillator.frequency.setValueAtTime(660, ctx.currentTime + 0.1);
         oscillator.frequency.setValueAtTime(880, ctx.currentTime + 0.2);
-        gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+        gainNode.gain.setValueAtTime(0.3 * volume, ctx.currentTime);
         gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
         oscillator.start(ctx.currentTime);
         oscillator.stop(ctx.currentTime + 0.4);
       } else {
         // Normal signal: single beep
         oscillator.frequency.setValueAtTime(520, ctx.currentTime);
-        gainNode.gain.setValueAtTime(0.2, ctx.currentTime);
+        gainNode.gain.setValueAtTime(0.2 * volume, ctx.currentTime);
         gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
         oscillator.start(ctx.currentTime);
         oscillator.stop(ctx.currentTime + 0.2);
@@ -43,21 +74,24 @@ export function useAlertSound() {
 
   // White protection alert - distinct chime sound
   const playWhiteProtectionSound = useCallback((confidence: number) => {
+    if (!isSoundEnabled()) return;
+    
     try {
       const ctx = getAudioContext();
+      const volume = getSoundVolume();
       
       const isStrong = confidence >= 70;
       const isMedium = confidence >= 55;
       
       // Create multiple oscillators for a richer sound
-      const createTone = (freq: number, startTime: number, duration: number, volume: number) => {
+      const createTone = (freq: number, startTime: number, duration: number, baseVolume: number) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.frequency.setValueAtTime(freq, ctx.currentTime + startTime);
         osc.type = 'sine';
-        gain.gain.setValueAtTime(volume, ctx.currentTime + startTime);
+        gain.gain.setValueAtTime(baseVolume * volume, ctx.currentTime + startTime);
         gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + startTime + duration);
         osc.start(ctx.currentTime + startTime);
         osc.stop(ctx.currentTime + startTime + duration);
