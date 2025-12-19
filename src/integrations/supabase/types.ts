@@ -14,6 +14,165 @@ export type Database = {
   }
   public: {
     Tables: {
+      bankroll_sessions: {
+        Row: {
+          base_bet: number
+          best_patterns: Json | null
+          completed_at: string | null
+          created_at: string
+          current_bankroll: number
+          id: string
+          initial_bankroll: number
+          learned_adjustments: Json | null
+          losses: number
+          max_gales: number
+          session_id: string
+          status: string | null
+          target_amount: number
+          total_bets: number
+          total_profit: number
+          updated_at: string
+          wins: number
+        }
+        Insert: {
+          base_bet: number
+          best_patterns?: Json | null
+          completed_at?: string | null
+          created_at?: string
+          current_bankroll: number
+          id?: string
+          initial_bankroll: number
+          learned_adjustments?: Json | null
+          losses?: number
+          max_gales?: number
+          session_id: string
+          status?: string | null
+          target_amount: number
+          total_bets?: number
+          total_profit?: number
+          updated_at?: string
+          wins?: number
+        }
+        Update: {
+          base_bet?: number
+          best_patterns?: Json | null
+          completed_at?: string | null
+          created_at?: string
+          current_bankroll?: number
+          id?: string
+          initial_bankroll?: number
+          learned_adjustments?: Json | null
+          losses?: number
+          max_gales?: number
+          session_id?: string
+          status?: string | null
+          target_amount?: number
+          total_bets?: number
+          total_profit?: number
+          updated_at?: string
+          wins?: number
+        }
+        Relationships: []
+      }
+      bet_history: {
+        Row: {
+          actual_color: string | null
+          actual_profit: number | null
+          bankroll_after: number | null
+          bankroll_before: number
+          bet_amount: number
+          confidence: number
+          created_at: string
+          gale_level: number
+          id: string
+          pattern_data: Json | null
+          potential_profit: number
+          predicted_color: string
+          result: string | null
+          round_id: string | null
+          session_id: string
+          strategy: string | null
+        }
+        Insert: {
+          actual_color?: string | null
+          actual_profit?: number | null
+          bankroll_after?: number | null
+          bankroll_before: number
+          bet_amount: number
+          confidence: number
+          created_at?: string
+          gale_level?: number
+          id?: string
+          pattern_data?: Json | null
+          potential_profit: number
+          predicted_color: string
+          result?: string | null
+          round_id?: string | null
+          session_id: string
+          strategy?: string | null
+        }
+        Update: {
+          actual_color?: string | null
+          actual_profit?: number | null
+          bankroll_after?: number | null
+          bankroll_before?: number
+          bet_amount?: number
+          confidence?: number
+          created_at?: string
+          gale_level?: number
+          id?: string
+          pattern_data?: Json | null
+          potential_profit?: number
+          predicted_color?: string
+          result?: string | null
+          round_id?: string | null
+          session_id?: string
+          strategy?: string | null
+        }
+        Relationships: []
+      }
+      betting_analytics: {
+        Row: {
+          color: string
+          confidence: number
+          created_at: string
+          day_of_week: number
+          gale_level: number
+          hour_of_day: number
+          id: string
+          pattern_type: string | null
+          result: string
+          sample_size: number | null
+          win_rate: number | null
+        }
+        Insert: {
+          color: string
+          confidence: number
+          created_at?: string
+          day_of_week: number
+          gale_level: number
+          hour_of_day: number
+          id?: string
+          pattern_type?: string | null
+          result: string
+          sample_size?: number | null
+          win_rate?: number | null
+        }
+        Update: {
+          color?: string
+          confidence?: number
+          created_at?: string
+          day_of_week?: number
+          gale_level?: number
+          hour_of_day?: number
+          id?: string
+          pattern_type?: string | null
+          result?: string
+          sample_size?: number | null
+          win_rate?: number | null
+        }
+        Relationships: []
+      }
       blaze_rounds: {
         Row: {
           blaze_id: string
