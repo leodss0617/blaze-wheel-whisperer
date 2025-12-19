@@ -1,6 +1,6 @@
 // Simplified dashboard - focused on data collection and predictions only
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -8,12 +8,15 @@ import { Switch } from '@/components/ui/switch';
 import { Wifi, WifiOff, TrendingUp, Target, Shield, Clock, Activity } from 'lucide-react';
 import { useDataCollector } from '@/hooks/useDataCollector';
 import { usePredictionEngine } from '@/hooks/usePredictionEngine';
+import { useBankrollSystem } from '@/hooks/useBankrollSystem';
 import { ColorBall } from '@/components/ColorBall';
+import { SmartBankrollManager } from '@/components/SmartBankrollManager';
 import { format } from 'date-fns';
 
 export function SimplifiedDashboard() {
   const [predictionEnabled, setPredictionEnabled] = useState(true);
   const [intervalRounds, setIntervalRounds] = useState(2);
+  const [currentBetAmount, setCurrentBetAmount] = useState(0);
   
   const { rounds, colors, numbers, isConnected, lastUpdate, error } = useDataCollector();
   
@@ -31,6 +34,39 @@ export function SimplifiedDashboard() {
     enabled: predictionEnabled, 
     intervalRounds 
   });
+
+  const {
+    config: bankrollConfig,
+    isConfigured: isBankrollConfigured,
+    recordBet,
+    resolveBet,
+  } = useBankrollSystem();
+
+  // Record bet when new prediction is generated
+  useEffect(() => {
+    if (currentSignal && bankrollConfig && currentSignal.status === 'pending' && currentBetAmount > 0) {
+      recordBet({
+        roundId: currentSignal.id,
+        predictedColor: currentSignal.color,
+        galeLevel,
+        betAmount: currentBetAmount,
+        potentialProfit: currentBetAmount, // 2x payout minus bet
+        confidence: currentSignal.confidence,
+        strategy: currentSignal.strategy,
+        bankrollBefore: 0, // Will be set by the hook
+      });
+    }
+  }, [currentSignal?.id, galeLevel, currentBetAmount, bankrollConfig]);
+
+  // Resolve bet when prediction is resolved
+  useEffect(() => {
+    if (currentSignal && currentSignal.status !== 'pending' && bankrollConfig) {
+      const lastRound = rounds[0];
+      if (lastRound) {
+        resolveBet(lastRound.color, currentSignal.status === 'won');
+      }
+    }
+  }, [currentSignal?.status, bankrollConfig]);
 
   const winRate = stats.wins + stats.losses > 0 
     ? ((stats.wins / (stats.wins + stats.losses)) * 100).toFixed(1) 
@@ -248,6 +284,13 @@ export function SimplifiedDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Smart Bankroll Manager */}
+      <SmartBankrollManager 
+        galeLevel={galeLevel}
+        predictionConfidence={currentSignal?.confidence}
+        onBetAmountChange={setCurrentBetAmount}
+      />
 
       {/* History */}
       <Card>
