@@ -29,7 +29,7 @@ export interface PredictionOutput {
 export function generatePrediction(input: PredictionInput): PredictionOutput {
   const { colors, numbers, learnedPatterns, hour, minute } = input;
   
-  if (colors.length < 15) {
+  if (colors.length < 10) {
     return {
       signal: null,
       analysis: createEmptyAnalysis(hour, minute),
@@ -45,35 +45,35 @@ export function generatePrediction(input: PredictionInput): PredictionOutput {
   const markovChain = buildMarkovChain(colors, 3);
   const markovPrediction = predictFromMarkov(colors, markovChain, 3);
   
-  if (markovPrediction.color && markovPrediction.sampleSize >= 5) {
-    const markovScore = Math.round((markovPrediction.probability - 0.5) * 60);
+  if (markovPrediction.color && markovPrediction.sampleSize >= 3) {
+    const markovScore = Math.round((markovPrediction.probability - 0.5) * 80);
     if (markovPrediction.color === 'red') {
       redScore += markovScore;
-      reasons.push(`Markov: ${(markovPrediction.probability * 100).toFixed(0)}% (${markovPrediction.sampleSize} amostras)`);
+      reasons.push(`Markov: ${(markovPrediction.probability * 100).toFixed(0)}%`);
     } else {
       blackScore += markovScore;
-      reasons.push(`Markov: ${(markovPrediction.probability * 100).toFixed(0)}% (${markovPrediction.sampleSize} amostras)`);
+      reasons.push(`Markov: ${(markovPrediction.probability * 100).toFixed(0)}%`);
     }
   }
   
-  // 2. GAP ANALYSIS (weight: medium-high)
+  // 2. GAP ANALYSIS (weight: high - key for overdue colors)
   const redGap = calculateGapStats(colors, 'red');
   const blackGap = calculateGapStats(colors, 'black');
   
   const redHeatScore = getHeatZoneScore(redGap);
   const blackHeatScore = getHeatZoneScore(blackGap);
   
-  redScore += redHeatScore;
-  blackScore += blackHeatScore;
+  redScore += redHeatScore * 1.5;
+  blackScore += blackHeatScore * 1.5;
   
-  if (redHeatScore > 20) {
-    reasons.push(`Vermelho atrasado: ${redGap.currentGap} rodadas (média: ${redGap.avgGap.toFixed(1)})`);
+  if (redHeatScore > 15) {
+    reasons.push(`Vermelho atrasado: ${redGap.currentGap} rodadas`);
   }
-  if (blackHeatScore > 20) {
-    reasons.push(`Preto atrasado: ${blackGap.currentGap} rodadas (média: ${blackGap.avgGap.toFixed(1)})`);
+  if (blackHeatScore > 15) {
+    reasons.push(`Preto atrasado: ${blackGap.currentGap} rodadas`);
   }
   
-  // 3. STREAK ANALYSIS (weight: medium)
+  // 3. STREAK ANALYSIS (weight: high - critical for reversal detection)
   const streakAnalysis = analyzeStreaks(colors);
   const streakRec = getStreakRecommendation(streakAnalysis);
   
@@ -82,75 +82,105 @@ export function generatePrediction(input: PredictionInput): PredictionOutput {
     
     if (streakRec.strategy === 'counter') {
       if (oppositeColor === 'red') {
-        redScore += streakRec.score;
+        redScore += streakRec.score * 1.5;
       } else {
-        blackScore += streakRec.score;
+        blackScore += streakRec.score * 1.5;
       }
     } else { // follow
       if (streakAnalysis.currentStreak.color === 'red') {
-        redScore += streakRec.score;
+        redScore += streakRec.score * 1.2;
       } else {
-        blackScore += streakRec.score;
+        blackScore += streakRec.score * 1.2;
       }
     }
     
-    if (streakRec.score >= 15) {
+    if (streakRec.score >= 10) {
       reasons.push(streakRec.reason);
     }
   }
   
-  // 4. FREQUENCY/EQUALIZATION ANALYSIS (weight: medium)
+  // 4. FREQUENCY/EQUALIZATION ANALYSIS (weight: medium-high)
   const freq10 = calculateFrequency(colors, 10);
   const freq30 = calculateFrequency(colors, 30);
   const freq100 = calculateFrequency(colors, Math.min(100, colors.length));
   
   const eqScore = getEqualizationScore(freq10, freq30, freq100);
-  redScore += eqScore.redScore;
-  blackScore += eqScore.blackScore;
+  redScore += eqScore.redScore * 1.3;
+  blackScore += eqScore.blackScore * 1.3;
   
   if (eqScore.reason) {
     reasons.push(eqScore.reason);
   }
   
-  // 5. LEARNED PATTERNS (weight: medium-high)
+  // 5. LEARNED PATTERNS (weight: very high - key for accuracy)
   const patternMatches = findMatchingPatterns(colors, learnedPatterns);
   const patternScore = getPatternScore(patternMatches);
   
-  redScore += patternScore.redScore;
-  blackScore += patternScore.blackScore;
+  redScore += patternScore.redScore * 2;
+  blackScore += patternScore.blackScore * 2;
   
   if (patternScore.reason) {
     reasons.push(patternScore.reason);
   }
   
-  // 6. TIME-BASED ADJUSTMENT (weight: low)
-  // Some hours tend to favor certain colors based on historical data
+  // 6. LAST COLOR ALTERNATION ANALYSIS
+  const last5 = colors.slice(0, 5).filter(c => c !== 'white');
+  const alternations = countAlternations(last5);
+  
+  if (alternations >= 3) {
+    // High alternation - predict opposite of last
+    const lastNonWhite = last5[0];
+    if (lastNonWhite === 'red') {
+      blackScore += 15;
+      reasons.push('Alta alternância');
+    } else if (lastNonWhite === 'black') {
+      redScore += 15;
+      reasons.push('Alta alternância');
+    }
+  }
+  
+  // 7. TIME-BASED ADJUSTMENT (weight: low)
   const timeBonus = getTimeBonus(hour);
   redScore += timeBonus.red;
   blackScore += timeBonus.black;
+  
+  // 8. NUMBER PATTERN ANALYSIS
+  if (numbers.length >= 5) {
+    const lastNum = numbers[0];
+    const numPatternScore = analyzeNumberPattern(numbers, colors);
+    redScore += numPatternScore.red;
+    blackScore += numPatternScore.black;
+    if (numPatternScore.reason) {
+      reasons.push(numPatternScore.reason);
+    }
+  }
   
   // BUILD FINAL PREDICTION
   const scoreDiff = Math.abs(redScore - blackScore);
   const totalScore = Math.abs(redScore) + Math.abs(blackScore);
   
-  // Need minimum score difference for confidence
-  if (scoreDiff < 15 || totalScore < 30) {
+  // Lower threshold for more signals
+  if (scoreDiff < 8 || totalScore < 15) {
     return {
       signal: null,
       analysis: buildAnalysisFactors(input, redGap, blackGap, streakAnalysis, freq10, freq30),
-      debug: { redScore, blackScore, reasons: ['Diferença de score insuficiente'] }
+      debug: { redScore, blackScore, reasons: ['Diferença de score insuficiente', ...reasons] }
     };
   }
   
   const predictedColor: Color = redScore > blackScore ? 'red' : 'black';
   const winningScore = Math.max(redScore, blackScore);
   
-  // Calculate confidence (50-95%)
-  // Based on: score difference, number of reasons, absolute score
-  let confidence = 50;
-  confidence += Math.min(scoreDiff / 2, 20); // Up to +20 from diff
-  confidence += Math.min(reasons.length * 3, 15); // Up to +15 from reasons
-  confidence += Math.min(winningScore / 5, 10); // Up to +10 from absolute score
+  // Enhanced confidence calculation
+  let confidence = 45;
+  confidence += Math.min(scoreDiff / 1.5, 25); // Up to +25 from diff
+  confidence += Math.min(reasons.length * 4, 15); // Up to +15 from reasons
+  confidence += Math.min(winningScore / 4, 10); // Up to +10 from absolute score
+  
+  // Boost for learned patterns
+  if (patternScore.redScore > 0 || patternScore.blackScore > 0) {
+    confidence += 5;
+  }
   
   confidence = Math.min(Math.round(confidence), 95);
   
@@ -161,7 +191,7 @@ export function generatePrediction(input: PredictionInput): PredictionOutput {
     id: `pred_${Date.now()}`,
     color: predictedColor,
     confidence,
-    reason: reasons.slice(0, 2).join(' | ') || 'Análise híbrida',
+    reason: reasons.slice(0, 3).join(' | ') || 'Análise híbrida',
     timestamp: new Date(),
     status: 'pending',
     strategy
@@ -172,6 +202,65 @@ export function generatePrediction(input: PredictionInput): PredictionOutput {
     analysis: buildAnalysisFactors(input, redGap, blackGap, streakAnalysis, freq10, freq30),
     debug: { redScore, blackScore, reasons }
   };
+}
+
+function countAlternations(colors: Color[]): number {
+  let count = 0;
+  for (let i = 1; i < colors.length; i++) {
+    if (colors[i] !== colors[i - 1]) count++;
+  }
+  return count;
+}
+
+function analyzeNumberPattern(numbers: number[], colors: Color[]): { red: number; black: number; reason: string } {
+  const lastNum = numbers[0];
+  const result = { red: 0, black: 0, reason: '' };
+  
+  // Count what follows specific number ranges
+  const isLow = lastNum <= 7;
+  let lowToRed = 0, lowToBlack = 0, highToRed = 0, highToBlack = 0;
+  
+  for (let i = 0; i < Math.min(50, numbers.length - 1); i++) {
+    const num = numbers[i];
+    const nextColor = colors[i];
+    if (nextColor === 'white') continue;
+    
+    if (num <= 7) {
+      if (nextColor === 'red') lowToRed++;
+      else lowToBlack++;
+    } else {
+      if (nextColor === 'red') highToRed++;
+      else highToBlack++;
+    }
+  }
+  
+  if (isLow) {
+    const total = lowToRed + lowToBlack;
+    if (total >= 10) {
+      const redProb = lowToRed / total;
+      if (redProb > 0.55) {
+        result.red = (redProb - 0.5) * 20;
+        result.reason = `Número baixo → vermelho ${(redProb * 100).toFixed(0)}%`;
+      } else if (redProb < 0.45) {
+        result.black = (0.5 - redProb) * 20;
+        result.reason = `Número baixo → preto ${((1 - redProb) * 100).toFixed(0)}%`;
+      }
+    }
+  } else {
+    const total = highToRed + highToBlack;
+    if (total >= 10) {
+      const redProb = highToRed / total;
+      if (redProb > 0.55) {
+        result.red = (redProb - 0.5) * 20;
+        result.reason = `Número alto → vermelho ${(redProb * 100).toFixed(0)}%`;
+      } else if (redProb < 0.45) {
+        result.black = (0.5 - redProb) * 20;
+        result.reason = `Número alto → preto ${((1 - redProb) * 100).toFixed(0)}%`;
+      }
+    }
+  }
+  
+  return result;
 }
 
 function getTimeBonus(hour: number): { red: number; black: number } {

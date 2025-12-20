@@ -15,9 +15,10 @@ serve(async (req) => {
     const { 
       predictedColor, 
       actualColor, 
-      patterns, 
+      patterns = [], 
       roundId,
-      wasCorrect 
+      wasCorrect,
+      recentColors = []
     } = await req.json();
 
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
@@ -29,29 +30,117 @@ serve(async (req) => {
       predicted: predictedColor,
       actual: actualColor,
       wasCorrect,
-      patternsCount: patterns?.length || 0
+      patternsCount: patterns?.length || 0,
+      recentColorsCount: recentColors?.length || 0
     });
 
-    // Update each pattern that was used in this prediction
-    for (const pattern of (patterns || [])) {
+    // Auto-extract patterns from recent colors
+    const autoPatterns: { type: string; key: string; data: any }[] = [];
+    
+    if (recentColors && recentColors.length >= 3) {
+      // 2-gram pattern
+      const gram2 = recentColors.slice(1, 3).join('-');
+      autoPatterns.push({
+        type: 'sequence_2',
+        key: `sequence_2:${gram2}`,
+        data: { sequence: gram2, nextColor: actualColor }
+      });
+      
+      // 3-gram pattern
+      if (recentColors.length >= 4) {
+        const gram3 = recentColors.slice(1, 4).join('-');
+        autoPatterns.push({
+          type: 'sequence_3',
+          key: `sequence_3:${gram3}`,
+          data: { sequence: gram3, nextColor: actualColor }
+        });
+      }
+      
+      // 4-gram pattern for higher accuracy
+      if (recentColors.length >= 5) {
+        const gram4 = recentColors.slice(1, 5).join('-');
+        autoPatterns.push({
+          type: 'sequence_4',
+          key: `sequence_4:${gram4}`,
+          data: { sequence: gram4, nextColor: actualColor }
+        });
+      }
+      
+      // Streak pattern
+      let streakColor = recentColors[1];
+      let streakCount = 0;
+      for (const c of recentColors.slice(1)) {
+        if (c === 'white') continue;
+        if (c === streakColor) streakCount++;
+        else break;
+      }
+      if (streakCount >= 2) {
+        autoPatterns.push({
+          type: 'streak',
+          key: `streak:${streakColor}_${streakCount}`,
+          data: { streakColor, streakCount, nextColor: actualColor }
+        });
+      }
+      
+      // Gap pattern
+      const nonWhite = recentColors.slice(1).filter((c: string) => c !== 'white');
+      const redGap = nonWhite.indexOf('red');
+      const blackGap = nonWhite.indexOf('black');
+      
+      if (redGap >= 2) {
+        autoPatterns.push({
+          type: 'gap',
+          key: `gap:red_${redGap}`,
+          data: { color: 'red', gap: redGap, nextColor: actualColor }
+        });
+      }
+      if (blackGap >= 2) {
+        autoPatterns.push({
+          type: 'gap',
+          key: `gap:black_${blackGap}`,
+          data: { color: 'black', gap: blackGap, nextColor: actualColor }
+        });
+      }
+      
+      // Alternation pattern
+      let alternations = 0;
+      for (let i = 1; i < Math.min(6, nonWhite.length); i++) {
+        if (nonWhite[i] !== nonWhite[i - 1]) alternations++;
+      }
+      if (alternations >= 3) {
+        autoPatterns.push({
+          type: 'alternation',
+          key: `alternation:${alternations}`,
+          data: { alternations, nextColor: actualColor }
+        });
+      }
+    }
+
+    // Combine manual patterns with auto-extracted ones
+    const allPatterns = [...patterns, ...autoPatterns];
+
+    // Update each pattern
+    for (const pattern of allPatterns) {
       try {
-        // First get current pattern data
         const { data: existingPattern, error: fetchError } = await supabase
           .from('learned_patterns')
           .select('*')
           .eq('pattern_type', pattern.type)
           .eq('pattern_key', pattern.key)
-          .single();
+          .maybeSingle();
 
-        if (fetchError && fetchError.code !== 'PGRST116') {
+        if (fetchError) {
           console.error('Error fetching pattern:', fetchError);
           continue;
         }
 
+        // Determine if this pattern predicted correctly
+        const patternData = pattern.data || {};
+        const patternPredictedCorrectly = patternData.nextColor === actualColor || wasCorrect;
+
         if (existingPattern) {
-          // Update existing pattern
           const newTimesSeen = existingPattern.times_seen + 1;
-          const newTimesCorrect = existingPattern.times_correct + (wasCorrect ? 1 : 0);
+          const newTimesCorrect = existingPattern.times_correct + (patternPredictedCorrectly ? 1 : 0);
           const newSuccessRate = (newTimesCorrect / newTimesSeen) * 100;
 
           const updatedData = {
@@ -60,10 +149,10 @@ serve(async (req) => {
             lastPrediction: predictedColor,
             lastRoundId: roundId,
             lastUpdate: new Date().toISOString(),
-            ...(wasCorrect ? { lastSuccessfulPrediction: predictedColor } : {})
+            ...(patternPredictedCorrectly ? { lastSuccessfulPrediction: actualColor } : {})
           };
 
-          const { error: updateError } = await supabase
+          await supabase
             .from('learned_patterns')
             .update({
               times_seen: newTimesSeen,
@@ -74,80 +163,86 @@ serve(async (req) => {
             })
             .eq('id', existingPattern.id);
 
-          if (updateError) {
-            console.error('Error updating pattern:', updateError);
-          } else {
-            console.log(`Updated pattern ${pattern.type}:${pattern.key} - Success rate: ${newSuccessRate.toFixed(1)}%`);
-          }
+          console.log(`Updated ${pattern.type}:${pattern.key} - ${newSuccessRate.toFixed(1)}% (${newTimesCorrect}/${newTimesSeen})`);
         } else {
-          // Create new pattern
-          const { error: insertError } = await supabase
+          await supabase
             .from('learned_patterns')
             .insert({
               pattern_type: pattern.type,
               pattern_key: pattern.key,
               pattern_data: {
-                ...pattern.data,
+                ...patternData,
                 lastActualResult: actualColor,
                 lastPrediction: predictedColor,
                 lastRoundId: roundId,
                 created: new Date().toISOString(),
-                ...(wasCorrect ? { lastSuccessfulPrediction: predictedColor } : {})
+                ...(patternPredictedCorrectly ? { lastSuccessfulPrediction: actualColor } : {})
               },
               times_seen: 1,
-              times_correct: wasCorrect ? 1 : 0,
-              success_rate: wasCorrect ? 100 : 0,
+              times_correct: patternPredictedCorrectly ? 1 : 0,
+              success_rate: patternPredictedCorrectly ? 100 : 0,
               last_result: actualColor
             });
 
-          if (insertError) {
-            console.error('Error inserting pattern:', insertError);
-          } else {
-            console.log(`Created new pattern ${pattern.type}:${pattern.key}`);
-          }
+          console.log(`Created ${pattern.type}:${pattern.key}`);
         }
       } catch (e) {
         console.error('Error processing pattern:', e);
       }
     }
 
-    // Also update prediction_signals with patterns used
+    // Update prediction signal
     if (roundId) {
       try {
-        const { error: signalUpdateError } = await supabase
+        await supabase
           .from('prediction_signals')
           .update({
             actual_result: actualColor,
             status: wasCorrect ? 'win' : 'loss'
           })
           .eq('id', roundId);
-
-        if (signalUpdateError) {
-          console.error('Error updating signal:', signalUpdateError);
-        }
       } catch (e) {
         console.error('Error updating prediction signal:', e);
       }
     }
 
+    // Clean up low-performing patterns (prune after 10+ observations with <40% success)
+    const { data: lowPerformers } = await supabase
+      .from('learned_patterns')
+      .select('id')
+      .lt('success_rate', 40)
+      .gte('times_seen', 10);
+
+    if (lowPerformers && lowPerformers.length > 0) {
+      const idsToDelete = lowPerformers.map(p => p.id);
+      await supabase
+        .from('learned_patterns')
+        .delete()
+        .in('id', idsToDelete);
+      console.log(`Pruned ${idsToDelete.length} low-performing patterns`);
+    }
+
     // Get updated stats
-    const { data: allPatterns } = await supabase
+    const { data: allStoredPatterns } = await supabase
       .from('learned_patterns')
       .select('pattern_type, success_rate, times_seen')
       .order('success_rate', { ascending: false });
 
     const stats = {
-      totalPatterns: allPatterns?.length || 0,
-      highSuccessPatterns: allPatterns?.filter(p => p.success_rate >= 60).length || 0,
-      averageSuccessRate: allPatterns && allPatterns.length > 0 
-        ? allPatterns.reduce((acc, p) => acc + p.success_rate, 0) / allPatterns.length 
+      totalPatterns: allStoredPatterns?.length || 0,
+      highSuccessPatterns: allStoredPatterns?.filter(p => p.success_rate >= 55).length || 0,
+      averageSuccessRate: allStoredPatterns && allStoredPatterns.length > 0 
+        ? allStoredPatterns.reduce((acc, p) => acc + p.success_rate, 0) / allStoredPatterns.length 
         : 0,
-      mostReliableTypes: [...new Set(allPatterns?.filter(p => p.success_rate >= 60).map(p => p.pattern_type) || [])]
+      mostReliableTypes: [...new Set(allStoredPatterns?.filter(p => p.success_rate >= 60 && p.times_seen >= 3).map(p => p.pattern_type) || [])]
     };
+
+    console.log('Learning stats:', stats);
 
     return new Response(JSON.stringify({
       success: true,
-      patternsUpdated: patterns?.length || 0,
+      patternsUpdated: allPatterns.length,
+      autoExtracted: autoPatterns.length,
       stats
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
