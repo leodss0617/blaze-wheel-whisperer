@@ -661,35 +661,42 @@ serve(async (req) => {
     const scoreDiff = Math.abs(redScore - blackScore);
     const totalScore = redScore + blackScore;
     
-    // Enhanced confidence calculation
-    let confidence = 50;
+    // Enhanced confidence calculation - more sensitive
+    let confidence = 45;
     if (totalScore > 0) {
       // Base confidence from score difference
       const diffRatio = scoreDiff / Math.max(totalScore, 1);
-      confidence = 50 + diffRatio * 40;
+      confidence = 45 + diffRatio * 45;
       
       // Boost confidence based on number of supporting reasons
       const supportingReasons = predictedColor === 'red' ? redReasons.length : blackReasons.length;
-      if (supportingReasons >= 4) confidence += 5;
-      if (supportingReasons >= 6) confidence += 5;
+      if (supportingReasons >= 3) confidence += 5;
+      if (supportingReasons >= 5) confidence += 5;
+      if (supportingReasons >= 7) confidence += 5;
+      
+      // Boost for learned patterns match
+      if (matchedPatterns.length > 0) {
+        confidence += matchedPatterns.length * 2;
+      }
       
       // Reduce confidence if signals are mixed
       const opposingReasons = predictedColor === 'red' ? blackReasons.length : redReasons.length;
-      if (opposingReasons >= 3) confidence -= 5;
+      if (opposingReasons >= 4) confidence -= 5;
       
       // Clamp confidence
-      confidence = Math.min(95, Math.max(45, confidence));
+      confidence = Math.min(95, Math.max(40, confidence));
     }
     
-    // Should bet logic - more nuanced
-    const shouldBet = confidence >= 55 && scoreDiff >= 3;
+    // Lower threshold for betting - more signals
+    const shouldBet = confidence >= 45 && scoreDiff >= 2;
 
     const winningReasons = predictedColor === 'red' ? redReasons : blackReasons;
-    const reasonStr = winningReasons.slice(0, 5).join('; ');
+    const reasonStr = winningReasons.slice(0, 6).join('; ');
 
     console.log(`Prediction: ${predictedColor} | Confidence: ${confidence.toFixed(1)}% | Should bet: ${shouldBet}`);
     console.log(`Red Score: ${redScore.toFixed(1)} | Black Score: ${blackScore.toFixed(1)}`);
     console.log(`Reasons (${winningReasons.length}): ${reasonStr}`);
+    console.log(`Matched patterns: ${matchedPatterns.length}`);
 
     // Save prediction to database
     const { data: savedSignal, error: saveError } = await supabase
@@ -697,7 +704,7 @@ serve(async (req) => {
       .insert({
         predicted_color: predictedColor,
         confidence: Math.round(confidence),
-        reason: reasonStr || 'Análise multi-fator',
+        reason: reasonStr || 'Análise multi-fator avançada',
         protections: 2,
         signal_timestamp: new Date().toISOString(),
         status: 'pending'

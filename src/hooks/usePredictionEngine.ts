@@ -78,7 +78,7 @@ export function usePredictionEngine({
 
   // Generate prediction
   const generateNewPrediction = useCallback(async () => {
-    if (colors.length < 15 || isAnalyzing) return;
+    if (colors.length < 10 || isAnalyzing) return;
     
     setIsAnalyzing(true);
     setPredictionState('analyzing');
@@ -99,7 +99,7 @@ export function usePredictionEngine({
       // Generate white protection analysis
       const whiteAnalysis = analyzeWhiteGap(colors);
       const whiteProtection: WhiteProtection = {
-        shouldProtect: whiteAnalysis.isOverdue && whiteAnalysis.probability >= 20,
+        shouldProtect: whiteAnalysis.isOverdue && whiteAnalysis.probability >= 15,
         confidence: Math.round(whiteAnalysis.probability),
         reason: whiteAnalysis.isOverdue 
           ? `${whiteAnalysis.roundsSinceWhite} rodadas sem branco (média: ${whiteAnalysis.avgGapBetweenWhites.toFixed(0)})`
@@ -111,37 +111,59 @@ export function usePredictionEngine({
       setWhiteProtection(whiteProtection);
       setLastAnalysis(result.analysis);
       
-      if (result.signal) {
-        setCurrentSignal(result.signal);
-        setGaleLevel(0);
-        setPredictionState('active');
-        pendingVerification.current = result.signal;
-        predictionRoundIndex.current = colors.length;
+      // Lower threshold for signals - generate more predictions
+      if (result.signal || result.debug.redScore > 10 || result.debug.blackScore > 10) {
+        let signal = result.signal;
         
-        // Save to database
-        await savePredictionToDb(result.signal);
-        
-        const isHighConfidence = result.signal.confidence >= 75;
-        
-        // Play alert sound for new signal
-        playAlertSound(isHighConfidence);
-        
-        // Play white protection sound if needed
-        if (whiteProtection.shouldProtect) {
-          setTimeout(() => playWhiteProtectionSound(whiteProtection.confidence), 500);
+        // Create signal even if original didn't meet threshold
+        if (!signal && (result.debug.redScore > 10 || result.debug.blackScore > 10)) {
+          const predictedColor: Color = result.debug.redScore > result.debug.blackScore ? 'red' : 'black';
+          const scoreDiff = Math.abs(result.debug.redScore - result.debug.blackScore);
+          const confidence = Math.min(95, 45 + scoreDiff);
+          
+          signal = {
+            id: `pred_${Date.now()}`,
+            color: predictedColor,
+            confidence: Math.round(confidence),
+            reason: result.debug.reasons.slice(0, 2).join(' | ') || 'Análise de padrões',
+            timestamp: new Date(),
+            status: 'pending',
+            strategy: 'hybrid'
+          };
         }
         
-        toast({
-          title: isHighConfidence ? '🔥 SINAL FORTE!' : '🎯 Novo Sinal',
-          description: `${result.signal.color === 'red' ? 'VERMELHO' : 'PRETO'} - ${result.signal.confidence}%`,
-        });
-        
-        console.log('✅ Previsão gerada:', {
-          color: result.signal.color,
-          confidence: result.signal.confidence,
-          strategy: result.signal.strategy,
-          reasons: result.debug.reasons
-        });
+        if (signal) {
+          setCurrentSignal(signal);
+          setGaleLevel(0);
+          setPredictionState('active');
+          pendingVerification.current = signal;
+          predictionRoundIndex.current = colors.length;
+          
+          // Save to database
+          await savePredictionToDb(signal);
+          
+          const isHighConfidence = signal.confidence >= 70;
+          
+          // Play alert sound for new signal
+          playAlertSound(isHighConfidence);
+          
+          // Play white protection sound if needed
+          if (whiteProtection.shouldProtect) {
+            setTimeout(() => playWhiteProtectionSound(whiteProtection.confidence), 500);
+          }
+          
+          toast({
+            title: isHighConfidence ? '🔥 SINAL FORTE!' : '🎯 Novo Sinal',
+            description: `${signal.color === 'red' ? 'VERMELHO' : 'PRETO'} - ${signal.confidence}%`,
+          });
+          
+          console.log('✅ Previsão gerada:', {
+            color: signal.color,
+            confidence: signal.confidence,
+            strategy: signal.strategy,
+            reasons: result.debug.reasons
+          });
+        }
       } else {
         console.log('⏸️ Sem sinal claro:', result.debug.reasons);
       }
@@ -150,7 +172,7 @@ export function usePredictionEngine({
     } finally {
       setIsAnalyzing(false);
     }
-  }, [colors, numbers, toast]);
+  }, [colors, numbers, toast, playAlertSound, playWhiteProtectionSound]);
 
   // Save prediction to database
   const savePredictionToDb = async (signal: PredictionSignal) => {
@@ -295,7 +317,7 @@ export function usePredictionEngine({
 
   // Effect: Check for prediction opportunity on each new round
   useEffect(() => {
-    if (!enabled || colors.length < 15) return;
+    if (!enabled || colors.length < 10) return;
     
     const currentCount = colors.length;
     const roundsSinceLastPrediction = currentCount - lastRoundCount.current;
@@ -306,8 +328,11 @@ export function usePredictionEngine({
       return; // Don't generate new prediction while one is pending
     }
     
+    // More frequent predictions - use shorter interval (minimum 1 round)
+    const effectiveInterval = Math.max(1, intervalRounds);
+    
     // Check if it's time for new prediction
-    if (roundsSinceLastPrediction >= intervalRounds) {
+    if (roundsSinceLastPrediction >= effectiveInterval) {
       lastRoundCount.current = currentCount;
       generateNewPrediction();
     }
