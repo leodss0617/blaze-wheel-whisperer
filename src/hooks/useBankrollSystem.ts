@@ -73,14 +73,14 @@ export function useBankrollSystem() {
     }
   });
   
-  const [currentBankroll, setCurrentBankroll] = useState<number>(config?.initialBankroll || 0);
+  const [currentBankroll, setCurrentBankroll] = useState<number>(0);
   const [sessionStats, setSessionStats] = useState<SessionStats>({
     totalBets: 0,
     wins: 0,
     losses: 0,
     winRate: 0,
     totalProfit: 0,
-    currentBankroll: config?.initialBankroll || 0,
+    currentBankroll: 0,
     progressToTarget: 0,
     estimatedBetsToTarget: 0,
   });
@@ -102,6 +102,7 @@ export function useBankrollSystem() {
   
   const [betHistory, setBetHistory] = useState<BetRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
   const pendingBetRef = useRef<BetRecord | null>(null);
 
   // Save config to localStorage
@@ -110,6 +111,91 @@ export function useBankrollSystem() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
     }
   }, [config]);
+
+  // Load session data from database on mount
+  useEffect(() => {
+    const loadSessionFromDatabase = async () => {
+      if (!config || isInitialized) return;
+      
+      setIsLoading(true);
+      
+      try {
+        // Load session data
+        const { data: sessionData } = await supabase
+          .from('bankroll_sessions')
+          .select('*')
+          .eq('session_id', config.sessionId)
+          .maybeSingle();
+        
+        if (sessionData) {
+          const bankroll = Number(sessionData.current_bankroll);
+          const initial = Number(sessionData.initial_bankroll);
+          const target = Number(sessionData.target_amount);
+          const totalBets = sessionData.total_bets || 0;
+          const wins = sessionData.wins || 0;
+          const losses = sessionData.losses || 0;
+          const totalProfit = Number(sessionData.total_profit) || 0;
+          
+          setCurrentBankroll(bankroll);
+          setSessionStats({
+            totalBets,
+            wins,
+            losses,
+            winRate: totalBets > 0 ? (wins / totalBets) * 100 : 0,
+            totalProfit,
+            currentBankroll: bankroll,
+            progressToTarget: target > initial ? ((bankroll - initial) / (target - initial)) * 100 : 0,
+            estimatedBetsToTarget: totalProfit > 0 && totalBets > 0
+              ? Math.ceil((target - bankroll) / (totalProfit / totalBets))
+              : Math.ceil((target - bankroll) / (config.baseBet || 1)),
+          });
+        } else {
+          // Session not found in DB, use config values
+          setCurrentBankroll(config.initialBankroll);
+          setSessionStats(prev => ({
+            ...prev,
+            currentBankroll: config.initialBankroll,
+          }));
+        }
+        
+        // Load bet history
+        const { data: historyData } = await supabase
+          .from('bet_history')
+          .select('*')
+          .eq('session_id', config.sessionId)
+          .order('created_at', { ascending: false })
+          .limit(100);
+        
+        if (historyData && historyData.length > 0) {
+          const mappedHistory: BetRecord[] = historyData.map(h => ({
+            id: h.id,
+            roundId: h.round_id || undefined,
+            predictedColor: h.predicted_color,
+            actualColor: h.actual_color || undefined,
+            galeLevel: h.gale_level,
+            betAmount: Number(h.bet_amount),
+            potentialProfit: Number(h.potential_profit),
+            actualProfit: h.actual_profit ? Number(h.actual_profit) : undefined,
+            result: (h.result || 'pending') as 'pending' | 'win' | 'loss',
+            bankrollBefore: Number(h.bankroll_before),
+            bankrollAfter: h.bankroll_after ? Number(h.bankroll_after) : undefined,
+            confidence: h.confidence,
+            strategy: h.strategy || undefined,
+            patternData: (h.pattern_data as Record<string, unknown>) || undefined,
+          }));
+          setBetHistory(mappedHistory);
+        }
+        
+        setIsInitialized(true);
+      } catch (e) {
+        console.error('Error loading session:', e);
+      }
+      
+      setIsLoading(false);
+    };
+    
+    loadSessionFromDatabase();
+  }, [config, isInitialized]);
 
   // Generate session ID
   const generateSessionId = useCallback((): string => {
@@ -597,6 +683,7 @@ export function useBankrollSystem() {
       estimatedBetsToTarget: 0,
     });
     setBetHistory([]);
+    setIsInitialized(false);
     localStorage.removeItem(STORAGE_KEY);
     
     toast({
@@ -605,12 +692,12 @@ export function useBankrollSystem() {
     });
   }, [config, toast]);
 
-  // Load session data on mount
+  // Load learning insights when session is initialized
   useEffect(() => {
-    if (config) {
+    if (config && isInitialized) {
       loadLearningInsights();
     }
-  }, [config?.sessionId]);
+  }, [config?.sessionId, isInitialized]);
 
   return {
     // Configuration
