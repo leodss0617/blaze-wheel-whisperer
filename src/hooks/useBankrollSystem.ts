@@ -697,7 +697,7 @@ export function useBankrollSystem() {
     if (config && isInitialized) {
       loadLearningInsights();
     }
-  }, [config?.sessionId, isInitialized]);
+  }, [isInitialized, loadLearningInsights]);
 
   return {
     // Configuration
