@@ -328,15 +328,49 @@ export function usePredictionEngine({
       return; // Don't generate new prediction while one is pending
     }
     
-    // More frequent predictions - use shorter interval (minimum 1 round)
-    const effectiveInterval = Math.max(1, intervalRounds);
+    // Check for high confidence prediction opportunity (90%+)
+    // This requires a quick pre-check before the interval
+    const shouldCheckHighConfidence = roundsSinceLastPrediction >= 1;
     
-    // Check if it's time for new prediction
+    // Prediction every 2 rounds OR if 90%+ confidence detected
+    const effectiveInterval = 2; // Fixed at 2 rounds
+    
+    // Check if it's time for new prediction (every 2 rounds)
     if (roundsSinceLastPrediction >= effectiveInterval) {
       lastRoundCount.current = currentCount;
       generateNewPrediction();
+    } else if (shouldCheckHighConfidence && !isAnalyzing) {
+      // Pre-check for high confidence opportunity
+      checkHighConfidenceOpportunity();
     }
   }, [colors.length, enabled, intervalRounds, generateNewPrediction, verifyPrediction]);
+  
+  // Check for high confidence opportunity (90%+)
+  const checkHighConfidenceOpportunity = useCallback(async () => {
+    if (colors.length < 10 || isAnalyzing || pendingVerification.current) return;
+    
+    try {
+      const { hour, minute } = getBrasiliaTime();
+      const learnedPatterns = await loadLearnedPatterns();
+      
+      const result = generatePrediction({
+        colors,
+        numbers,
+        learnedPatterns,
+        hour,
+        minute
+      });
+      
+      // Only generate if 90%+ confidence
+      if (result.signal && result.signal.confidence >= 90) {
+        console.log('🔥 Alta confiança detectada (90%+), gerando previsão imediata!');
+        lastRoundCount.current = colors.length;
+        generateNewPrediction();
+      }
+    } catch (error) {
+      console.error('High confidence check error:', error);
+    }
+  }, [colors, numbers, isAnalyzing, generateNewPrediction]);
 
   return {
     currentSignal,

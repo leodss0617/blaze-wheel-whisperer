@@ -11,6 +11,7 @@ import { usePredictionEngine } from '@/hooks/usePredictionEngine';
 import { useBankrollSystem } from '@/hooks/useBankrollSystem';
 import { ColorBall } from '@/components/ColorBall';
 import { SmartBankrollManager } from '@/components/SmartBankrollManager';
+import { PredictionHistoryPanel } from '@/components/PredictionHistoryPanel';
 import { format } from 'date-fns';
 
 export function SimplifiedDashboard() {
@@ -172,7 +173,7 @@ export function SimplifiedDashboard() {
                   <div>
                     <p className="text-muted-foreground">Aguardando próximo sinal...</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {colors.length < 15 ? `Coletando dados (${colors.length}/15)` : 'Sistema pronto'}
+                      {colors.length < 10 ? `Coletando dados (${colors.length}/10)` : `Sistema pronto (${colors.length}/500 rodadas)`}
                     </p>
                   </div>
                 )}
@@ -291,6 +292,9 @@ export function SimplifiedDashboard() {
         predictionConfidence={currentSignal?.confidence}
         onBetAmountChange={setCurrentBetAmount}
       />
+
+      {/* Prediction History */}
+      <PredictionHistoryPanel />
 
       {/* History */}
       <Card>

@@ -5,15 +5,16 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Updated Blaze API endpoints (blaze.bet.br)
-const getHistoryUrl = () => {
+// Updated Blaze API endpoints (blaze.bet.br) - fetch up to 500 records
+const getHistoryUrl = (page = 1) => {
   const date = new Date();
   const endDate = date.toISOString();
   
-  date.setDate(date.getDate() - 1);
+  // Go back 3 days for more history
+  date.setDate(date.getDate() - 3);
   const startDate = date.toISOString();
   
-  return `https://blaze.bet.br/api/singleplayer-originals/originals/roulette_games/recent/history/1?startDate=${startDate}&endDate=${endDate}&page=1`;
+  return `https://blaze.bet.br/api/singleplayer-originals/originals/roulette_games/recent/history/1?startDate=${startDate}&endDate=${endDate}&page=${page}`;
 };
 
 // Alternative endpoints to try
@@ -31,62 +32,83 @@ serve(async (req) => {
   }
 
   try {
-    let data = null;
+    let allData: any[] = [];
     let lastError = null;
 
-    // Try each endpoint until one works
-    for (const getUrl of BLAZE_ENDPOINTS) {
-      const url = getUrl();
-      console.log(`Trying Blaze endpoint: ${url}`);
-
-      try {
-        // Add timeout to prevent hanging connections
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+    // Try to fetch multiple pages for more history
+    for (let page = 1; page <= 5; page++) {
+      let pageData = null;
+      
+      // Try each endpoint until one works for this page
+      for (const getUrl of BLAZE_ENDPOINTS) {
+        const url = getUrl instanceof Function && getUrl.length > 0 
+          ? (getUrl as (page: number) => string)(page)
+          : typeof getUrl === 'function' ? getUrl() : getUrl;
         
-        const response = await fetch(url, {
-          signal: controller.signal,
-          headers: {
-            'Accept': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Referer': 'https://blaze.bet.br/',
-            'Origin': 'https://blaze.bet.br',
-            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-          },
-        });
-        
-        clearTimeout(timeoutId);
+        console.log(`Trying Blaze endpoint (page ${page}): ${url}`);
 
-        if (response.ok) {
-          const jsonData = await response.json();
-          console.log(`Success from ${url}:`, JSON.stringify(jsonData).substring(0, 200));
+        try {
+          // Add timeout to prevent hanging connections
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
           
-          // Handle different response formats
-          if (jsonData.records && Array.isArray(jsonData.records)) {
-            data = jsonData.records;
-          } else if (Array.isArray(jsonData)) {
-            data = jsonData;
-          } else if (jsonData.data && Array.isArray(jsonData.data)) {
-            data = jsonData.data;
+          const response = await fetch(url, {
+            signal: controller.signal,
+            headers: {
+              'Accept': 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Referer': 'https://blaze.bet.br/',
+              'Origin': 'https://blaze.bet.br',
+              'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+            },
+          });
+          
+          clearTimeout(timeoutId);
+
+          if (response.ok) {
+            const jsonData = await response.json();
+            console.log(`Success from ${url}:`, JSON.stringify(jsonData).substring(0, 200));
+            
+            // Handle different response formats
+            if (jsonData.records && Array.isArray(jsonData.records)) {
+              pageData = jsonData.records;
+            } else if (Array.isArray(jsonData)) {
+              pageData = jsonData;
+            } else if (jsonData.data && Array.isArray(jsonData.data)) {
+              pageData = jsonData.data;
+            } else {
+              pageData = [jsonData];
+            }
+            
+            if (pageData && pageData.length > 0) {
+              console.log(`Got ${pageData.length} records from ${url} (page ${page})`);
+              break;
+            }
           } else {
-            data = [jsonData];
+            console.log(`Failed ${url}: ${response.status} ${response.statusText}`);
           }
-          
-          if (data && data.length > 0) {
-            console.log(`Got ${data.length} records from ${url}`);
-            break;
-          }
-        } else {
-          console.log(`Failed ${url}: ${response.status} ${response.statusText}`);
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+          console.log(`Error with ${url}:`, errorMessage);
+          lastError = errorMessage;
         }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-        console.log(`Error with ${url}:`, errorMessage);
-        lastError = errorMessage;
+      }
+      
+      if (pageData && pageData.length > 0) {
+        allData = [...allData, ...pageData];
+        console.log(`Total records so far: ${allData.length}`);
+        
+        // Stop if we have enough or if page returned less data (end of history)
+        if (allData.length >= 500 || pageData.length < 50) {
+          break;
+        }
+      } else {
+        // No more data available
+        break;
       }
     }
 
-    if (!data || data.length === 0) {
+    if (!allData || allData.length === 0) {
       console.log('All endpoints failed, returning error');
       return new Response(
         JSON.stringify({ 
@@ -100,6 +122,8 @@ serve(async (req) => {
         }
       );
     }
+    
+    const data = allData;
 
     // Normalize the data format
     const normalizedData = data.map((item: any) => ({
