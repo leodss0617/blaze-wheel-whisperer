@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.update-learned-patterns]
 verify_jwt = false
+
+[functions.pattern-research]
+verify_jwt = false

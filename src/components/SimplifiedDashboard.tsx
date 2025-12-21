@@ -8,9 +8,10 @@ import { Switch } from '@/components/ui/switch';
 import { Wifi, WifiOff, TrendingUp, Target, Shield, Clock, Activity } from 'lucide-react';
 import { useDataCollector } from '@/hooks/useDataCollector';
 import { usePredictionEngine } from '@/hooks/usePredictionEngine';
-import { useBankrollSystem } from '@/hooks/useBankrollSystem';
+import { useAdvancedBankroll } from '@/hooks/useAdvancedBankroll';
 import { ColorBall } from '@/components/ColorBall';
-import { SmartBankrollManager } from '@/components/SmartBankrollManager';
+import { AdvancedBankrollManager } from '@/components/AdvancedBankrollManager';
+import { PatternResearchPanel } from '@/components/PatternResearchPanel';
 import { format } from 'date-fns';
 
 export function SimplifiedDashboard() {
@@ -40,21 +41,18 @@ export function SimplifiedDashboard() {
     isConfigured: isBankrollConfigured,
     recordBet,
     resolveBet,
-  } = useBankrollSystem();
+  } = useAdvancedBankroll();
 
   // Record bet when new prediction is generated
   useEffect(() => {
     if (currentSignal && bankrollConfig && currentSignal.status === 'pending' && currentBetAmount > 0) {
-      recordBet({
-        roundId: currentSignal.id,
-        predictedColor: currentSignal.color,
+      recordBet(
+        currentSignal.color,
         galeLevel,
-        betAmount: currentBetAmount,
-        potentialProfit: currentBetAmount, // 2x payout minus bet
-        confidence: currentSignal.confidence,
-        strategy: currentSignal.strategy,
-        bankrollBefore: 0, // Will be set by the hook
-      });
+        currentSignal.confidence,
+        currentSignal.id,
+        currentSignal.strategy
+      );
     }
   }, [currentSignal?.id, galeLevel, currentBetAmount, bankrollConfig]);
 
@@ -286,11 +284,14 @@ export function SimplifiedDashboard() {
       </div>
 
       {/* Smart Bankroll Manager */}
-      <SmartBankrollManager 
+      <AdvancedBankrollManager 
         galeLevel={galeLevel}
         predictionConfidence={currentSignal?.confidence}
         onBetAmountChange={setCurrentBetAmount}
       />
+
+      {/* Pattern Research */}
+      <PatternResearchPanel />
 
       {/* History */}
       <Card>
