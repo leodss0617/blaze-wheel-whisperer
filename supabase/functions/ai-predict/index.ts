@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -49,12 +49,12 @@ serve(async (req) => {
     
     console.log(`AI Predict - Brasília: ${currentHour}:${currentMinute}:${currentSecond} | Recalibration: ${recalibrationMode}`);
 
-    // Fetch recent rounds - Increased to 500 for comprehensive analysis
+    // Fetch recent rounds - 200 for comprehensive analysis
     const { data: recentRounds, error: roundsError } = await supabase
       .from('blaze_rounds')
       .select('*')
       .order('round_timestamp', { ascending: false })
-      .limit(500); // Increased limit
+      .limit(200);
 
     if (roundsError) {
       console.error('Error fetching rounds:', roundsError);
@@ -638,7 +638,9 @@ serve(async (req) => {
     if (recalibrationMode) {
       console.log('Applying recalibration...');
       
-      const recentLosses = (pastSignals || []).filter(s => s.status === 'loss').slice(0, 5);
+      const recentLosses = (pastSignals || [])
+        .filter(s => s.status === 'loss')
+        .slice(0, 5);
       
       let lossRed = recentLosses.filter(l => l.predicted_color === 'red').length;
       let lossBlack = recentLosses.filter(l => l.predicted_color === 'black').length;

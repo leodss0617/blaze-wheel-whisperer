@@ -12,7 +12,6 @@ interface BlazeAPIGame {
 }
 
 const POLL_INTERVAL = 3000; // 3 seconds
-const MAX_ROUNDS_HISTORY = 500; // Increased from 200 to 500 for more comprehensive analysis
 
 export function useDataCollector() {
   const [rounds, setRounds] = useState<Round[]>([]);
@@ -40,7 +39,7 @@ export function useDataCollector() {
   const fetchRounds = useCallback(async () => {
     try {
       const { data, error: proxyError } = await supabase.functions.invoke('blaze-proxy', {
-        body: { limit: MAX_ROUNDS_HISTORY } // Request up to MAX_ROUNDS_HISTORY
+        body: { limit: 100 }
       });
 
       if (proxyError) {
@@ -91,8 +90,8 @@ export function useDataCollector() {
       if (newRounds.length > 0) {
         setRounds(prev => {
           const combined = [...newRounds, ...prev];
-          // Keep only last MAX_ROUNDS_HISTORY rounds in memory
-          return combined.slice(0, MAX_ROUNDS_HISTORY);
+          // Keep only last 200 rounds in memory
+          return combined.slice(0, 200);
         });
       }
     } catch (err) {
