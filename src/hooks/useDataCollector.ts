@@ -39,7 +39,7 @@ export function useDataCollector() {
   const fetchRounds = useCallback(async () => {
     try {
       const { data, error: proxyError } = await supabase.functions.invoke('blaze-proxy', {
-        body: { limit: 100 }
+        body: { limit: 500 }
       });
 
       if (proxyError) {
@@ -90,8 +90,8 @@ export function useDataCollector() {
       if (newRounds.length > 0) {
         setRounds(prev => {
           const combined = [...newRounds, ...prev];
-          // Keep only last 200 rounds in memory
-          return combined.slice(0, 200);
+          // Keep only last 500 rounds in memory for better analysis
+          return combined.slice(0, 500);
         });
       }
     } catch (err) {
