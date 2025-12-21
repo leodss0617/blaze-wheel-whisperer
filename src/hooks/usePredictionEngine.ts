@@ -78,10 +78,9 @@ export function usePredictionEngine({
 
   // Generate prediction
   const generateNewPrediction = useCallback(async () => {
-    if (colors.length < 10 || isAnalyzing) return;
+    if (colors.length < 10 || isAnalyzing) return null;
     
     setIsAnalyzing(true);
-    setPredictionState('analyzing');
     
     try {
       const { hour, minute } = getBrasiliaTime();
@@ -98,7 +97,7 @@ export function usePredictionEngine({
       
       // Generate white protection analysis
       const whiteAnalysis = analyzeWhiteGap(colors);
-      const whiteProtection: WhiteProtection = {
+      const newWhiteProtection: WhiteProtection = {
         shouldProtect: whiteAnalysis.isOverdue && whiteAnalysis.probability >= 15,
         confidence: Math.round(whiteAnalysis.probability),
         reason: whiteAnalysis.isOverdue 
@@ -108,7 +107,7 @@ export function usePredictionEngine({
         avgGap: whiteAnalysis.avgGapBetweenWhites
       };
       
-      setWhiteProtection(whiteProtection);
+      setWhiteProtection(newWhiteProtection);
       setLastAnalysis(result.analysis);
       
       // Lower threshold for signals - generate more predictions
@@ -133,14 +132,15 @@ export function usePredictionEngine({
         }
         
         if (signal) {
+          // Set state BEFORE async operations
           setCurrentSignal(signal);
           setGaleLevel(0);
           setPredictionState('active');
           pendingVerification.current = signal;
           predictionRoundIndex.current = colors.length;
           
-          // Save to database
-          await savePredictionToDb(signal);
+          // Save to database (async, don't wait)
+          savePredictionToDb(signal);
           
           const isHighConfidence = signal.confidence >= 70;
           
@@ -148,8 +148,8 @@ export function usePredictionEngine({
           playAlertSound(isHighConfidence);
           
           // Play white protection sound if needed
-          if (whiteProtection.shouldProtect) {
-            setTimeout(() => playWhiteProtectionSound(whiteProtection.confidence), 500);
+          if (newWhiteProtection.shouldProtect) {
+            setTimeout(() => playWhiteProtectionSound(newWhiteProtection.confidence), 500);
           }
           
           toast({
@@ -163,15 +163,19 @@ export function usePredictionEngine({
             strategy: signal.strategy,
             reasons: result.debug.reasons
           });
+          
+          setIsAnalyzing(false);
+          return signal;
         }
       } else {
         console.log('⏸️ Sem sinal claro:', result.debug.reasons);
       }
     } catch (error) {
       console.error('Prediction error:', error);
-    } finally {
-      setIsAnalyzing(false);
     }
+    
+    setIsAnalyzing(false);
+    return null;
   }, [colors, numbers, toast, playAlertSound, playWhiteProtectionSound]);
 
   // Save prediction to database
@@ -315,39 +319,9 @@ export function usePredictionEngine({
     }
   };
 
-  // Effect: Check for prediction opportunity on each new round
-  useEffect(() => {
-    if (!enabled || colors.length < 10) return;
-    
-    const currentCount = colors.length;
-    const roundsSinceLastPrediction = currentCount - lastRoundCount.current;
-    
-    // Verify pending prediction first
-    if (pendingVerification.current) {
-      verifyPrediction();
-      return; // Don't generate new prediction while one is pending
-    }
-    
-    // Check for high confidence prediction opportunity (90%+)
-    // This requires a quick pre-check before the interval
-    const shouldCheckHighConfidence = roundsSinceLastPrediction >= 1;
-    
-    // Prediction every 2 rounds OR if 90%+ confidence detected
-    const effectiveInterval = 2; // Fixed at 2 rounds
-    
-    // Check if it's time for new prediction (every 2 rounds)
-    if (roundsSinceLastPrediction >= effectiveInterval) {
-      lastRoundCount.current = currentCount;
-      generateNewPrediction();
-    } else if (shouldCheckHighConfidence && !isAnalyzing) {
-      // Pre-check for high confidence opportunity
-      checkHighConfidenceOpportunity();
-    }
-  }, [colors.length, enabled, intervalRounds, generateNewPrediction, verifyPrediction]);
-  
   // Check for high confidence opportunity (90%+)
   const checkHighConfidenceOpportunity = useCallback(async () => {
-    if (colors.length < 10 || isAnalyzing || pendingVerification.current) return;
+    if (colors.length < 10 || isAnalyzing || pendingVerification.current || currentSignal) return;
     
     try {
       const { hour, minute } = getBrasiliaTime();
@@ -365,12 +339,43 @@ export function usePredictionEngine({
       if (result.signal && result.signal.confidence >= 90) {
         console.log('🔥 Alta confiança detectada (90%+), gerando previsão imediata!');
         lastRoundCount.current = colors.length;
-        generateNewPrediction();
+        await generateNewPrediction();
       }
     } catch (error) {
       console.error('High confidence check error:', error);
     }
-  }, [colors, numbers, isAnalyzing, generateNewPrediction]);
+  }, [colors, numbers, isAnalyzing, currentSignal, generateNewPrediction]);
+
+  // Effect: Check for prediction opportunity on each new round
+  useEffect(() => {
+    if (!enabled || colors.length < 10) return;
+    
+    const currentCount = colors.length;
+    const roundsSinceLastPrediction = currentCount - lastRoundCount.current;
+    
+    // Verify pending prediction first
+    if (pendingVerification.current) {
+      verifyPrediction();
+      return; // Don't generate new prediction while one is pending
+    }
+    
+    // Don't generate new if we already have an active signal
+    if (currentSignal && currentSignal.status === 'pending') {
+      return;
+    }
+    
+    // Prediction every 2 rounds OR if 90%+ confidence detected
+    const effectiveInterval = 2; // Fixed at 2 rounds
+    
+    // Check if it's time for new prediction (every 2 rounds)
+    if (roundsSinceLastPrediction >= effectiveInterval) {
+      lastRoundCount.current = currentCount;
+      generateNewPrediction();
+    } else if (roundsSinceLastPrediction >= 1 && !isAnalyzing) {
+      // Pre-check for high confidence opportunity
+      checkHighConfidenceOpportunity();
+    }
+  }, [colors.length, enabled, currentSignal, isAnalyzing, generateNewPrediction, verifyPrediction, checkHighConfidenceOpportunity]);
 
   return {
     currentSignal,
