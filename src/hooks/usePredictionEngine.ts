@@ -84,32 +84,53 @@ export function usePredictionEngine({
     return { hour: brasiliaTime.getHours(), minute: brasiliaTime.getMinutes() };
   };
 
-  // Save prediction to database
-  const savePredictionToDb = async (signal: PredictionSignal) => {
+  // Save prediction to database and return the DB id
+  const savePredictionToDb = async (signal: PredictionSignal): Promise<string | null> => {
     try {
-      await supabase.from('prediction_signals').insert({
-        predicted_color: signal.color,
-        confidence: signal.confidence,
-        reason: signal.reason,
-        signal_timestamp: signal.timestamp.toISOString(),
-        status: 'pending',
-        protections: 2
-      });
+      const { data, error } = await supabase
+        .from('prediction_signals')
+        .insert({
+          predicted_color: signal.color,
+          confidence: signal.confidence,
+          reason: signal.reason,
+          signal_timestamp: signal.timestamp.toISOString(),
+          status: 'pending',
+          protections: 2
+        })
+        .select('id')
+        .single();
+      
+      if (error) {
+        console.error('Error saving prediction:', error);
+        return null;
+      }
+      
+      console.log('✅ Previsão salva no banco:', data.id);
+      return data.id;
     } catch (err) {
       console.error('Error saving prediction:', err);
+      return null;
     }
   };
 
-  // Update prediction result in DB
-  const updatePredictionResult = async (id: string, actualColor: Color, won: boolean) => {
+  // Update prediction result in DB by signal_timestamp (more reliable)
+  const updatePredictionResult = async (signalTimestamp: Date, actualColor: Color, won: boolean) => {
     try {
-      await supabase
+      const { data, error } = await supabase
         .from('prediction_signals')
         .update({ 
           status: won ? 'won' : 'lost',
-          actual_result: actualColor 
+          actual_result: actualColor,
+          updated_at: new Date().toISOString()
         })
-        .eq('id', id);
+        .eq('signal_timestamp', signalTimestamp.toISOString())
+        .select('id');
+      
+      if (error) {
+        console.error('Error updating prediction:', error);
+      } else {
+        console.log('✅ Resultado salvo no banco:', { id: data?.[0]?.id, won, actualColor });
+      }
     } catch (err) {
       console.error('Error updating prediction:', err);
     }
@@ -279,7 +300,7 @@ export function usePredictionEngine({
       console.log(`✅ Previsão CORRETA ${galeLevel > 0 ? `(Gale ${galeLevel})` : ''}`, { predicted: predicted.color, actual: actualColor });
       
       // Update in database
-      updatePredictionResult(predicted.id, actualColor, true);
+      updatePredictionResult(predicted.timestamp, actualColor, true);
       updateLearnedPatterns(colors, actualColor, true);
       
       // Reset state
@@ -327,7 +348,7 @@ export function usePredictionEngine({
         console.log('❌ Previsão INCORRETA após 2 gales', { predicted: predicted.color, actual: actualColor });
         
         // Update in database
-        updatePredictionResult(predicted.id, actualColor, false);
+        updatePredictionResult(predicted.timestamp, actualColor, false);
         updateLearnedPatterns(colors, actualColor, false);
         
         // Reset state
