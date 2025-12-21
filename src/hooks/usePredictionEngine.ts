@@ -35,9 +35,17 @@ export function usePredictionEngine({
   const [galeLevel, setGaleLevel] = useState<0 | 1 | 2>(0);
   const [predictionState, setPredictionState] = useState<PredictionState>('analyzing');
   
+  // Use refs for values that shouldn't trigger re-renders
   const lastRoundCount = useRef(0);
   const pendingVerification = useRef<PredictionSignal | null>(null);
   const predictionRoundIndex = useRef<number | null>(null);
+  const isAnalyzingRef = useRef(false);
+  const currentSignalRef = useRef<PredictionSignal | null>(null);
+  
+  // Keep refs in sync with state
+  useEffect(() => {
+    currentSignalRef.current = currentSignal;
+  }, [currentSignal]);
   
   // Load learned patterns from DB
   const loadLearnedPatterns = async (): Promise<LearnedPattern[]> => {
@@ -76,11 +84,67 @@ export function usePredictionEngine({
     return { hour: brasiliaTime.getHours(), minute: brasiliaTime.getMinutes() };
   };
 
-  // Generate prediction
+  // Save prediction to database
+  const savePredictionToDb = async (signal: PredictionSignal) => {
+    try {
+      await supabase.from('prediction_signals').insert({
+        predicted_color: signal.color,
+        confidence: signal.confidence,
+        reason: signal.reason,
+        signal_timestamp: signal.timestamp.toISOString(),
+        status: 'pending',
+        protections: 2
+      });
+    } catch (err) {
+      console.error('Error saving prediction:', err);
+    }
+  };
+
+  // Update prediction result in DB
+  const updatePredictionResult = async (id: string, actualColor: Color, won: boolean) => {
+    try {
+      await supabase
+        .from('prediction_signals')
+        .update({ 
+          status: won ? 'won' : 'lost',
+          actual_result: actualColor 
+        })
+        .eq('id', id);
+    } catch (err) {
+      console.error('Error updating prediction:', err);
+    }
+  };
+
+  // Update learned patterns based on result
+  const updateLearnedPatterns = async (recentColors: Color[], actualColor: Color, wasCorrect: boolean) => {
+    try {
+      await supabase.functions.invoke('update-learned-patterns', {
+        body: {
+          recentColors: recentColors.slice(0, 10),
+          actualColor,
+          wasCorrect
+        }
+      });
+    } catch (err) {
+      console.error('Error updating patterns:', err);
+    }
+  };
+
+  // Generate prediction - using ref to prevent dependency issues
   const generateNewPrediction = useCallback(async () => {
-    if (colors.length < 10 || isAnalyzing) return null;
+    // Use ref to check if already analyzing
+    if (colors.length < 10 || isAnalyzingRef.current) {
+      console.log('⏸️ Skipping prediction:', { 
+        colorsLength: colors.length, 
+        isAnalyzing: isAnalyzingRef.current 
+      });
+      return null;
+    }
     
+    isAnalyzingRef.current = true;
     setIsAnalyzing(true);
+    
+    console.log('🔄 Gerando nova previsão...');
     
     try {
       const { hour, minute } = getBrasiliaTime();
@@ -132,12 +196,22 @@ export function usePredictionEngine({
         }
         
         if (signal) {
-          // Set state BEFORE async operations
+          console.log('✅ Previsão gerada:', {
+            color: signal.color,
+            confidence: signal.confidence,
+            strategy: signal.strategy,
+            reasons: result.debug.reasons
+          });
+          
+          // Set refs first
+          pendingVerification.current = signal;
+          predictionRoundIndex.current = colors.length;
+          currentSignalRef.current = signal;
+          
+          // Then set state
           setCurrentSignal(signal);
           setGaleLevel(0);
           setPredictionState('active');
-          pendingVerification.current = signal;
-          predictionRoundIndex.current = colors.length;
           
           // Save to database (async, don't wait)
           savePredictionToDb(signal);
@@ -157,13 +231,7 @@ export function usePredictionEngine({
             description: `${signal.color === 'red' ? 'VERMELHO' : 'PRETO'} - ${signal.confidence}%`,
           });
           
-          console.log('✅ Previsão gerada:', {
-            color: signal.color,
-            confidence: signal.confidence,
-            strategy: signal.strategy,
-            reasons: result.debug.reasons
-          });
-          
+          isAnalyzingRef.current = false;
           setIsAnalyzing(false);
           return signal;
         }
@@ -174,25 +242,10 @@ export function usePredictionEngine({
       console.error('Prediction error:', error);
     }
     
+    isAnalyzingRef.current = false;
     setIsAnalyzing(false);
     return null;
   }, [colors, numbers, toast, playAlertSound, playWhiteProtectionSound]);
-
-  // Save prediction to database
-  const savePredictionToDb = async (signal: PredictionSignal) => {
-    try {
-      await supabase.from('prediction_signals').insert({
-        predicted_color: signal.color,
-        confidence: signal.confidence,
-        reason: signal.reason,
-        signal_timestamp: signal.timestamp.toISOString(),
-        status: 'pending',
-        protections: 2
-      });
-    } catch (err) {
-      console.error('Error saving prediction:', err);
-    }
-  };
 
   // Verify prediction result
   const verifyPrediction = useCallback(() => {
@@ -232,12 +285,13 @@ export function usePredictionEngine({
       // Reset state
       pendingVerification.current = null;
       predictionRoundIndex.current = null;
+      currentSignalRef.current = null;
       setGaleLevel(0);
       
       setTimeout(() => {
         setCurrentSignal(null);
         setPredictionState('analyzing');
-      }, 3000);
+      }, 5000); // Show result for 5 seconds
       
     } else {
       // LOSS - check gale level
@@ -279,72 +333,16 @@ export function usePredictionEngine({
         // Reset state
         pendingVerification.current = null;
         predictionRoundIndex.current = null;
+        currentSignalRef.current = null;
         setGaleLevel(0);
         
         setTimeout(() => {
           setCurrentSignal(null);
           setPredictionState('analyzing');
-        }, 3000);
+        }, 5000); // Show result for 5 seconds
       }
     }
-  }, [colors, toast, galeLevel]);
-
-  // Update prediction result in DB
-  const updatePredictionResult = async (id: string, actualColor: Color, won: boolean) => {
-    try {
-      await supabase
-        .from('prediction_signals')
-        .update({ 
-          status: won ? 'won' : 'lost',
-          actual_result: actualColor 
-        })
-        .eq('id', id);
-    } catch (err) {
-      console.error('Error updating prediction:', err);
-    }
-  };
-
-  // Update learned patterns based on result
-  const updateLearnedPatterns = async (recentColors: Color[], actualColor: Color, wasCorrect: boolean) => {
-    try {
-      await supabase.functions.invoke('update-learned-patterns', {
-        body: {
-          recentColors: recentColors.slice(0, 10),
-          actualColor,
-          wasCorrect
-        }
-      });
-    } catch (err) {
-      console.error('Error updating patterns:', err);
-    }
-  };
-
-  // Check for high confidence opportunity (90%+)
-  const checkHighConfidenceOpportunity = useCallback(async () => {
-    if (colors.length < 10 || isAnalyzing || pendingVerification.current || currentSignal) return;
-    
-    try {
-      const { hour, minute } = getBrasiliaTime();
-      const learnedPatterns = await loadLearnedPatterns();
-      
-      const result = generatePrediction({
-        colors,
-        numbers,
-        learnedPatterns,
-        hour,
-        minute
-      });
-      
-      // Only generate if 90%+ confidence
-      if (result.signal && result.signal.confidence >= 90) {
-        console.log('🔥 Alta confiança detectada (90%+), gerando previsão imediata!');
-        lastRoundCount.current = colors.length;
-        await generateNewPrediction();
-      }
-    } catch (error) {
-      console.error('High confidence check error:', error);
-    }
-  }, [colors, numbers, isAnalyzing, currentSignal, generateNewPrediction]);
+  }, [colors, toast, galeLevel, playAlertSound]);
 
   // Effect: Check for prediction opportunity on each new round
   useEffect(() => {
@@ -353,6 +351,15 @@ export function usePredictionEngine({
     const currentCount = colors.length;
     const roundsSinceLastPrediction = currentCount - lastRoundCount.current;
     
+    console.log('🔍 Check prediction:', {
+      currentCount,
+      lastRoundCount: lastRoundCount.current,
+      roundsSince: roundsSinceLastPrediction,
+      hasPending: !!pendingVerification.current,
+      hasSignal: !!currentSignalRef.current,
+      isAnalyzing: isAnalyzingRef.current
+    });
+    
     // Verify pending prediction first
     if (pendingVerification.current) {
       verifyPrediction();
@@ -360,22 +367,27 @@ export function usePredictionEngine({
     }
     
     // Don't generate new if we already have an active signal
-    if (currentSignal && currentSignal.status === 'pending') {
+    if (currentSignalRef.current && currentSignalRef.current.status === 'pending') {
+      console.log('⏸️ Signal already active, skipping');
       return;
     }
     
-    // Prediction every 2 rounds OR if 90%+ confidence detected
-    const effectiveInterval = 2; // Fixed at 2 rounds
+    // Skip if already analyzing
+    if (isAnalyzingRef.current) {
+      console.log('⏸️ Already analyzing, skipping');
+      return;
+    }
     
-    // Check if it's time for new prediction (every 2 rounds)
+    // Prediction every 2 rounds
+    const effectiveInterval = 2;
+    
+    // Check if it's time for new prediction
     if (roundsSinceLastPrediction >= effectiveInterval) {
+      console.log('🎯 Time for new prediction!');
       lastRoundCount.current = currentCount;
       generateNewPrediction();
-    } else if (roundsSinceLastPrediction >= 1 && !isAnalyzing) {
-      // Pre-check for high confidence opportunity
-      checkHighConfidenceOpportunity();
     }
-  }, [colors.length, enabled, currentSignal, isAnalyzing, generateNewPrediction, verifyPrediction, checkHighConfidenceOpportunity]);
+  }, [colors.length, enabled, generateNewPrediction, verifyPrediction]);
 
   return {
     currentSignal,
