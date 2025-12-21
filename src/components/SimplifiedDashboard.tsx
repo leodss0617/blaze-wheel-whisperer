@@ -57,7 +57,7 @@ export function SimplifiedDashboard() {
         bankrollBefore: 0, // Will be set by the hook
       });
     }
-  }, [currentSignal?.id, galeLevel, currentBetAmount, bankrollConfig]);
+  }, [currentSignal, galeLevel, currentBetAmount, bankrollConfig, recordBet]);
 
   // Resolve bet when prediction is resolved
   useEffect(() => {
@@ -67,7 +67,7 @@ export function SimplifiedDashboard() {
         resolveBet(lastRound.color, currentSignal.status === 'won');
       }
     }
-  }, [currentSignal?.status, bankrollConfig]);
+  }, [currentSignal, bankrollConfig, rounds, resolveBet]);
 
   const winRate = stats.wins + stats.losses > 0 
     ? ((stats.wins / (stats.wins + stats.losses)) * 100).toFixed(1) 
