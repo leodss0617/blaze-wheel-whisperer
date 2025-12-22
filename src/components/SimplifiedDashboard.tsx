@@ -1,6 +1,6 @@
 // Simplified dashboard - focused on data collection and predictions only
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -41,33 +41,61 @@ export function SimplifiedDashboard() {
   const {
     config: bankrollConfig,
     isConfigured: isBankrollConfigured,
+    currentBankroll,
+    sessionStats,
     recordBet,
     resolveBet,
+    getCurrentBetAmount,
   } = useBankrollSystem();
+
+  // Calculate current bet based on gale level when bankroll is configured
+  useEffect(() => {
+    if (bankrollConfig) {
+      const calculatedBet = getCurrentBetAmount(galeLevel);
+      setCurrentBetAmount(calculatedBet);
+    }
+  }, [bankrollConfig, galeLevel, getCurrentBetAmount]);
+
+  // Track if we already recorded this prediction
+  const lastRecordedPredictionRef = React.useRef<string | null>(null);
+  const lastResolvedPredictionRef = React.useRef<string | null>(null);
 
   // Record bet when new prediction is generated
   useEffect(() => {
-    if (currentSignal && bankrollConfig && currentSignal.status === 'pending' && currentBetAmount > 0) {
-      recordBet({
-        roundId: currentSignal.id,
-        predictedColor: currentSignal.color,
-        galeLevel,
-        betAmount: currentBetAmount,
-        potentialProfit: currentBetAmount, // 2x payout minus bet
-        confidence: currentSignal.confidence,
-        strategy: currentSignal.strategy,
-        bankrollBefore: 0, // Will be set by the hook
-      });
-    }
-  }, [currentSignal, galeLevel, currentBetAmount, bankrollConfig, recordBet]);
+    if (!currentSignal || !bankrollConfig || currentBetAmount <= 0) return;
+    if (currentSignal.status !== 'pending') return;
+    
+    // Avoid duplicate records
+    const signalKey = `${currentSignal.id}-${galeLevel}`;
+    if (lastRecordedPredictionRef.current === signalKey) return;
+    
+    lastRecordedPredictionRef.current = signalKey;
+    
+    recordBet({
+      roundId: currentSignal.id,
+      predictedColor: currentSignal.color,
+      galeLevel,
+      betAmount: currentBetAmount,
+      potentialProfit: currentBetAmount,
+      confidence: currentSignal.confidence,
+      strategy: currentSignal.strategy,
+      bankrollBefore: currentBankroll,
+    });
+  }, [currentSignal, galeLevel, currentBetAmount, bankrollConfig, currentBankroll, recordBet]);
 
   // Resolve bet when prediction is resolved
   useEffect(() => {
-    if (currentSignal && currentSignal.status !== 'pending' && bankrollConfig) {
-      const lastRound = rounds[0];
-      if (lastRound) {
-        resolveBet(lastRound.color, currentSignal.status === 'won');
-      }
+    if (!currentSignal || !bankrollConfig) return;
+    if (currentSignal.status === 'pending') return;
+    
+    // Avoid duplicate resolves
+    const signalKey = `${currentSignal.id}-resolved`;
+    if (lastResolvedPredictionRef.current === signalKey) return;
+    
+    const lastRound = rounds[0];
+    if (lastRound) {
+      lastResolvedPredictionRef.current = signalKey;
+      resolveBet(lastRound.color, currentSignal.status === 'won');
     }
   }, [currentSignal, bankrollConfig, rounds, resolveBet]);
 
@@ -308,6 +336,11 @@ export function SimplifiedDashboard() {
             galeLevel={galeLevel}
             predictionConfidence={currentSignal?.confidence}
             onBetAmountChange={setCurrentBetAmount}
+            currentSignal={currentSignal ? {
+              color: currentSignal.color,
+              status: currentSignal.status,
+              confidence: currentSignal.confidence
+            } : null}
           />
 
           {/* History */}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,12 +31,18 @@ interface SmartBankrollManagerProps {
   galeLevel: number;
   predictionConfidence?: number;
   onBetAmountChange?: (amount: number) => void;
+  currentSignal?: {
+    color: string;
+    status: string;
+    confidence: number;
+  } | null;
 }
 
 export function SmartBankrollManager({ 
   galeLevel, 
   predictionConfidence = 0,
-  onBetAmountChange 
+  onBetAmountChange,
+  currentSignal
 }: SmartBankrollManagerProps) {
   const {
     config,
@@ -53,6 +59,10 @@ export function SmartBankrollManager({
     resetSession,
     isLoading,
   } = useBankrollSystem();
+
+  // Track previous bankroll to show changes
+  const [lastBankrollChange, setLastBankrollChange] = useState<number>(0);
+  const prevBankrollRef = React.useRef<number>(currentBankroll);
 
   const [formBankroll, setFormBankroll] = useState('');
   const [formTarget, setFormTarget] = useState('');
@@ -87,6 +97,20 @@ export function SmartBankrollManager({
       onBetAmountChange(currentBet);
     }
   }, [config, galeLevel, getCurrentBetAmount, onBetAmountChange]);
+
+  // Track bankroll changes for visual feedback
+  useEffect(() => {
+    if (currentBankroll !== prevBankrollRef.current) {
+      const change = currentBankroll - prevBankrollRef.current;
+      if (prevBankrollRef.current > 0) {
+        setLastBankrollChange(change);
+        // Clear the change indicator after 3 seconds
+        const timer = setTimeout(() => setLastBankrollChange(0), 3000);
+        return () => clearTimeout(timer);
+      }
+      prevBankrollRef.current = currentBankroll;
+    }
+  }, [currentBankroll]);
 
   const handleInitialize = async () => {
     const bankroll = parseFloat(formBankroll) || 0;
@@ -234,6 +258,48 @@ export function SmartBankrollManager({
             <span>{formatCurrency(config!.targetAmount)}</span>
           </div>
         </div>
+
+        {/* Live Bankroll Change Indicator */}
+        {lastBankrollChange !== 0 && (
+          <div className={cn(
+            "p-2 rounded-lg text-center animate-pulse",
+            lastBankrollChange > 0 ? "bg-green-500/20 border border-green-500/40" : "bg-red-500/20 border border-red-500/40"
+          )}>
+            <p className={cn(
+              "text-lg font-bold",
+              lastBankrollChange > 0 ? "text-green-400" : "text-red-400"
+            )}>
+              {lastBankrollChange > 0 ? '+' : ''}{formatCurrency(lastBankrollChange)}
+            </p>
+            <p className="text-[10px] text-muted-foreground">
+              {lastBankrollChange > 0 ? 'Lucro na última aposta' : 'Perda na última aposta'}
+            </p>
+          </div>
+        )}
+
+        {/* Current Signal Status */}
+        {currentSignal && (
+          <div className={cn(
+            "p-2 rounded-lg flex items-center justify-between",
+            currentSignal.status === 'pending' ? "bg-amber-500/10 border border-amber-500/30" :
+            currentSignal.status === 'won' ? "bg-green-500/10 border border-green-500/30" :
+            "bg-red-500/10 border border-red-500/30"
+          )}>
+            <div className="flex items-center gap-2">
+              <div className={cn(
+                "w-3 h-3 rounded-full",
+                currentSignal.color === 'red' ? "bg-red-500" : "bg-gray-800 border border-gray-500"
+              )} />
+              <span className="text-xs font-medium">
+                {currentSignal.status === 'pending' ? 'Aguardando resultado...' :
+                 currentSignal.status === 'won' ? '✅ Aposta ganha!' : '❌ Aposta perdida'}
+              </span>
+            </div>
+            <Badge variant={currentSignal.status === 'pending' ? 'secondary' : currentSignal.status === 'won' ? 'default' : 'destructive'} className="text-[10px]">
+              {currentSignal.confidence}%
+            </Badge>
+          </div>
+        )}
 
         {/* Stats Grid */}
         <div className="grid grid-cols-3 gap-2">
