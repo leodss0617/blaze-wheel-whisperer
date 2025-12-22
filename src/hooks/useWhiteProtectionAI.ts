@@ -32,7 +32,12 @@ interface HistoricalData {
   dbWhitePercentage: number;
   avgGapFromDb: number;
   maxGapFromDb: number;
+  minGapFromDb: number;
+  stdDevFromDb: number;
+  gapHistory: number[];
+  avgNumberBeforeWhite: number;
   recentWhitePattern: string[];
+  sequencesBeforeWhite: Array<{colors: string[], numbers: number[]}>;
 }
 
 export function useWhiteProtectionAI() {
@@ -43,7 +48,7 @@ export function useWhiteProtectionAI() {
   const lastAnalyzedRound = useRef<string | null>(null);
   const lastHistoryFetch = useRef<number>(0);
 
-  // Load complete historical data from database
+  // Load complete historical data from database (1000 rounds)
   const loadHistoricalData = useCallback(async () => {
     const now = Date.now();
     // Only fetch every 30 seconds to avoid too many queries
@@ -52,11 +57,9 @@ export function useWhiteProtectionAI() {
     }
     
     try {
-      // Get total counts
-      const { data: countData } = await supabase
-        .from('blaze_rounds')
-        .select('id', { count: 'exact', head: true });
+      console.log('📊 Carregando histórico completo de 1000 rodadas para análise de branco...');
       
+      // Get total counts
       const { count: totalCount } = await supabase
         .from('blaze_rounds')
         .select('id', { count: 'exact', head: true });
@@ -66,23 +69,27 @@ export function useWhiteProtectionAI() {
         .select('id', { count: 'exact', head: true })
         .eq('color', 'white');
 
-      // Get last 500 rounds for gap analysis
+      // Get last 1000 rounds for complete pattern analysis
       const { data: recentRounds } = await supabase
         .from('blaze_rounds')
-        .select('color, round_timestamp')
+        .select('color, number, round_timestamp')
         .order('round_timestamp', { ascending: false })
-        .limit(500);
+        .limit(1000);
 
       if (!recentRounds || recentRounds.length === 0) {
         return null;
       }
 
-      // Calculate gaps between whites
+      console.log(`📊 Analisando ${recentRounds.length} rodadas para padrões de branco...`);
+
+      // Calculate ALL gaps between whites in the 1000 rounds
       const gaps: number[] = [];
       let lastWhiteIndex = -1;
+      const whitePositions: number[] = [];
       
       recentRounds.forEach((round, idx) => {
         if (round.color === 'white') {
+          whitePositions.push(idx);
           if (lastWhiteIndex !== -1) {
             gaps.push(idx - lastWhiteIndex);
           }
@@ -92,31 +99,52 @@ export function useWhiteProtectionAI() {
 
       const avgGap = gaps.length > 0 ? gaps.reduce((a, b) => a + b, 0) / gaps.length : 14;
       const maxGap = gaps.length > 0 ? Math.max(...gaps) : 30;
+      const minGap = gaps.length > 0 ? Math.min(...gaps) : 1;
+      
+      // Calculate standard deviation
+      const variance = gaps.length > 0
+        ? gaps.reduce((sum, gap) => sum + Math.pow(gap - avgGap, 2), 0) / gaps.length
+        : 0;
+      const stdDev = Math.sqrt(variance);
 
-      // Get recent pattern before whites (last 10 whites)
-      const { data: whiteRounds } = await supabase
-        .from('blaze_rounds')
-        .select('round_timestamp')
-        .eq('color', 'white')
-        .order('round_timestamp', { ascending: false })
-        .limit(10);
+      console.log(`📊 Estatísticas de branco: ${whitePositions.length} brancos em ${recentRounds.length} rodadas`);
+      console.log(`📊 Gaps: média=${avgGap.toFixed(1)}, max=${maxGap}, min=${minGap}, desvio=${stdDev.toFixed(1)}`);
 
+      // Analyze patterns before EVERY white occurrence (last 20 whites)
       const recentPattern: string[] = [];
-      if (whiteRounds && whiteRounds.length > 0) {
-        for (const whiteRound of whiteRounds.slice(0, 5)) {
-          // Get 5 rounds before each white
-          const { data: beforeWhite } = await supabase
-            .from('blaze_rounds')
-            .select('color')
-            .lt('round_timestamp', whiteRound.round_timestamp)
-            .order('round_timestamp', { ascending: false })
-            .limit(5);
-          
-          if (beforeWhite) {
-            recentPattern.push(beforeWhite.map(r => r.color).join('-'));
-          }
+      const sequencesBeforeWhite: Array<{colors: string[], numbers: number[]}> = [];
+      
+      for (let i = 0; i < Math.min(whitePositions.length, 20); i++) {
+        const whiteIdx = whitePositions[i];
+        if (whiteIdx >= 5) {
+          // Get 5 rounds before this white
+          const before = recentRounds.slice(whiteIdx - 5, whiteIdx);
+          const colorPattern = before.map(r => r.color).join('-');
+          const numberPattern = before.map(r => r.number);
+          recentPattern.push(colorPattern);
+          sequencesBeforeWhite.push({ colors: before.map(r => r.color), numbers: numberPattern });
         }
       }
+
+      // Find common patterns that appear before white
+      const patternFrequency: Record<string, number> = {};
+      recentPattern.forEach(pattern => {
+        patternFrequency[pattern] = (patternFrequency[pattern] || 0) + 1;
+      });
+
+      // Sort by frequency
+      const sortedPatterns = Object.entries(patternFrequency)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([pattern, count]) => `${pattern} (${count}x)`);
+
+      console.log(`📊 Padrões mais comuns antes de branco:`, sortedPatterns);
+
+      // Analyze number patterns before white
+      const numberPatterns = sequencesBeforeWhite.flatMap(s => s.numbers);
+      const avgNumberBeforeWhite = numberPatterns.length > 0 
+        ? numberPatterns.reduce((a, b) => a + b, 0) / numberPatterns.length 
+        : 7;
 
       const data: HistoricalData = {
         totalDbRounds: totalCount || 0,
@@ -124,7 +152,13 @@ export function useWhiteProtectionAI() {
         dbWhitePercentage: totalCount && whiteCount ? (whiteCount / totalCount) * 100 : 6.5,
         avgGapFromDb: avgGap,
         maxGapFromDb: maxGap,
-        recentWhitePattern: recentPattern
+        recentWhitePattern: sortedPatterns,
+        // Extended data
+        minGapFromDb: minGap,
+        stdDevFromDb: stdDev,
+        gapHistory: gaps.slice(0, 30),
+        avgNumberBeforeWhite,
+        sequencesBeforeWhite: sequencesBeforeWhite.slice(0, 10),
       };
 
       setHistoricalData(data);
@@ -234,7 +268,7 @@ export function useWhiteProtectionAI() {
 
       if (error) {
         console.error('White protection AI error:', error);
-        return generateEnhancedRuleBasedProtection(stats, histData, currentBetAmount);
+        return generateEnhancedRuleBasedProtection(stats, histData, currentBetAmount, recentColors);
       }
 
       const signal: WhiteProtectionSignal = {
@@ -255,31 +289,37 @@ export function useWhiteProtectionAI() {
       console.error('Error analyzing white protection:', error);
       const stats = calculateWhiteStats(rounds);
       const histData = await loadHistoricalData();
-      return generateEnhancedRuleBasedProtection(stats, histData, currentBetAmount);
+      const recentColors = rounds.slice(0, 50).map(r => r.color);
+      return generateEnhancedRuleBasedProtection(stats, histData, currentBetAmount, recentColors);
     } finally {
       setIsAnalyzing(false);
     }
   }, [calculateWhiteStats, currentProtection, loadHistoricalData]);
 
-  // Enhanced rule-based fallback with historical data
+  // Enhanced rule-based fallback with historical data and pattern matching
   const generateEnhancedRuleBasedProtection = useCallback((
     stats: WhiteStats,
     histData: HistoricalData | null,
-    currentBetAmount: number
+    currentBetAmount: number,
+    recentColors?: string[]
   ): WhiteProtectionSignal => {
     let shouldProtect = false;
     let confidence = 0;
     let reason = '';
     let suggestedAmount = 0;
+    let patternMatch = false;
+    let matchedPattern = '';
 
     // Use historical average gap if available
     const avgGap = histData?.avgGapFromDb || stats.averageGapBetweenWhites || 14;
     const maxHistoricalGap = histData?.maxGapFromDb || stats.maxGapBetweenWhites || 40;
+    const minHistoricalGap = histData?.minGapFromDb || 1;
     const whitePercentage = histData?.dbWhitePercentage || 6.5;
+    const stdDev = histData?.stdDevFromDb || stats.stdDeviation || 5;
     
     // Calculate z-score (how many standard deviations from mean)
-    const zScore = stats.stdDeviation > 0 
-      ? (stats.roundsSinceLastWhite - avgGap) / stats.stdDeviation
+    const zScore = stdDev > 0 
+      ? (stats.roundsSinceLastWhite - avgGap) / stdDev
       : (stats.roundsSinceLastWhite - avgGap) / 5;
 
     // More sophisticated analysis
@@ -287,22 +327,58 @@ export function useWhiteProtectionAI() {
     const percentilePosition = stats.roundsSinceLastWhite / maxHistoricalGap;
 
     // Check recent gap patterns for acceleration
-    const recentGaps = stats.gapHistory.slice(0, 5);
+    const gapHistory = histData?.gapHistory || stats.gapHistory || [];
+    const recentGaps = gapHistory.slice(0, 5);
     const isGapDecreasing = recentGaps.length >= 3 && 
       recentGaps[0] < recentGaps[1] && recentGaps[1] < recentGaps[2];
 
+    // CRITICAL: Check if current pattern matches patterns that led to white
+    if (recentColors && recentColors.length >= 5 && histData?.sequencesBeforeWhite) {
+      const currentPattern = recentColors.slice(0, 5).join('-');
+      
+      for (const seq of histData.sequencesBeforeWhite) {
+        const histPattern = seq.colors.join('-');
+        // Check for exact match or high similarity
+        if (currentPattern === histPattern) {
+          patternMatch = true;
+          matchedPattern = histPattern;
+          console.log(`🎯 Padrão EXATO encontrado antes de branco: ${currentPattern}`);
+          break;
+        }
+        
+        // Check for partial match (3 or more colors match in sequence)
+        let matchCount = 0;
+        for (let i = 0; i < Math.min(5, seq.colors.length, recentColors.length); i++) {
+          if (recentColors[i] === seq.colors[i]) matchCount++;
+        }
+        if (matchCount >= 4) {
+          patternMatch = true;
+          matchedPattern = histPattern;
+          console.log(`🎯 Padrão SIMILAR (${matchCount}/5) encontrado: ${currentPattern} ~ ${histPattern}`);
+          break;
+        }
+      }
+    }
+
+    // PATTERN MATCH takes priority - if current pattern matches one that led to white
+    if (patternMatch && stats.roundsSinceLastWhite >= 8) {
+      shouldProtect = true;
+      confidence = Math.min(88, 70 + Math.floor(zScore * 3));
+      reason = `🎯 PADRÃO IDENTIFICADO: Sequência ${matchedPattern} precedeu branco em histórico. Gap atual: ${stats.roundsSinceLastWhite} rodadas`;
+      suggestedAmount = 15;
+    }
     // ZONA CRÍTICA: > 2 desvios padrão acima da média
-    if (zScore >= 2.5 || stats.roundsSinceLastWhite >= 30) {
+    else if (zScore >= 2.5 || stats.roundsSinceLastWhite >= 30) {
       shouldProtect = true;
       confidence = Math.min(92, 75 + Math.floor(zScore * 5));
-      reason = `⚠️ ZONA CRÍTICA: ${stats.roundsSinceLastWhite} rodadas sem branco (z-score: ${zScore.toFixed(1)}, histórico: ${histData?.totalDbRounds || 0} rodadas)`;
+      reason = `⚠️ ZONA CRÍTICA: ${stats.roundsSinceLastWhite} rodadas sem branco (z-score: ${zScore.toFixed(1)}, análise de ${histData?.totalDbRounds || 0} rodadas)`;
       suggestedAmount = 18;
     }
     // ZONA DE ALERTA ALTO: 1.5-2.5 desvios padrão
     else if (zScore >= 1.5 || stats.roundsSinceLastWhite >= 22) {
       shouldProtect = true;
       confidence = Math.min(80, 60 + Math.floor(zScore * 8));
-      reason = `⚠️ ALERTA ALTO: ${stats.roundsSinceLastWhite} rodadas (média histórica: ${avgGap.toFixed(0)}, máx: ${maxHistoricalGap})`;
+      reason = `⚠️ ALERTA ALTO: ${stats.roundsSinceLastWhite} rodadas (média: ${avgGap.toFixed(0)}, máx histórico: ${maxHistoricalGap})`;
       suggestedAmount = 12;
     }
     // ZONA DE ALERTA: 1-1.5 desvios padrão
@@ -323,7 +399,7 @@ export function useWhiteProtectionAI() {
     else {
       shouldProtect = false;
       confidence = 25 + Math.floor(gapRatio * 10);
-      reason = `${stats.roundsSinceLastWhite} rodadas sem branco - dentro do padrão histórico (${(whitePercentage).toFixed(1)}% de brancos em ${histData?.totalDbRounds || stats.totalRounds} rodadas)`;
+      reason = `${stats.roundsSinceLastWhite} rodadas sem branco - dentro do padrão (${(whitePercentage).toFixed(1)}% em ${histData?.totalDbRounds || stats.totalRounds} rodadas analisadas)`;
       suggestedAmount = 0;
     }
 

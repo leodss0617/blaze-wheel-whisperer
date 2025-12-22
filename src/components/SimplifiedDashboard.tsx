@@ -95,7 +95,9 @@ export function SimplifiedDashboard() {
     const lastRound = rounds[0];
     if (lastRound) {
       lastResolvedPredictionRef.current = signalKey;
-      resolveBet(lastRound.color, currentSignal.status === 'won');
+      // 'won' means win in local state
+      const isWin = currentSignal.status === 'won';
+      resolveBet(lastRound.color, isWin);
     }
   }, [currentSignal, bankrollConfig, rounds, resolveBet]);
 
