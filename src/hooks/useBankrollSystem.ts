@@ -366,16 +366,43 @@ export function useBankrollSystem() {
     actualColor: string,
     isWin: boolean
   ) => {
-    if (!config || !pendingBetRef.current) return;
+    if (!config) {
+      console.log('❌ resolveBet: config não disponível');
+      return;
+    }
     
-    const bet = pendingBetRef.current;
+    // Try to get pending bet from ref first, then from betHistory
+    let bet = pendingBetRef.current;
+    
+    if (!bet) {
+      // Find the most recent pending bet from history
+      const pendingBet = betHistory.find(b => b.result === 'pending');
+      if (pendingBet) {
+        bet = pendingBet;
+        console.log('📋 Usando bet pendente do histórico:', bet.id);
+      }
+    }
+    
+    if (!bet) {
+      console.log('❌ resolveBet: nenhum bet pendente encontrado');
+      return;
+    }
+    
     const actualProfit = isWin ? bet.potentialProfit : -bet.betAmount;
     const newBankroll = currentBankroll + actualProfit;
+    
+    console.log('💰 Resolvendo bet:', {
+      betId: bet.id,
+      isWin,
+      actualProfit,
+      currentBankroll,
+      newBankroll
+    });
     
     // Update database
     try {
       if (bet.id) {
-        await supabase
+        const { error: betError } = await supabase
           .from('bet_history')
           .update({
             actual_color: actualColor,
@@ -384,10 +411,16 @@ export function useBankrollSystem() {
             bankroll_after: newBankroll,
           })
           .eq('id', bet.id);
+        
+        if (betError) {
+          console.error('Erro ao atualizar bet:', betError);
+        } else {
+          console.log('✅ Bet atualizado no banco');
+        }
       }
       
       // Update session stats
-      await supabase
+      const { error: sessionError } = await supabase
         .from('bankroll_sessions')
         .update({
           current_bankroll: newBankroll,
@@ -397,6 +430,12 @@ export function useBankrollSystem() {
           total_profit: sessionStats.totalProfit + actualProfit,
         })
         .eq('session_id', config.sessionId);
+      
+      if (sessionError) {
+        console.error('Erro ao atualizar sessão:', sessionError);
+      } else {
+        console.log('✅ Sessão atualizada no banco');
+      }
       
       // Record analytics for learning
       const now = new Date();
@@ -455,7 +494,7 @@ export function useBankrollSystem() {
     }
     
     return { actualProfit, newBankroll };
-  }, [config, currentBankroll, sessionStats, toast]);
+  }, [config, currentBankroll, sessionStats, betHistory, toast]);
 
   // Load learning insights from database
   const loadLearningInsights = useCallback(async () => {
