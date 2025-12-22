@@ -17,7 +17,7 @@ import { format } from 'date-fns';
 
 export function SimplifiedDashboard() {
   const [predictionEnabled, setPredictionEnabled] = useState(true);
-  const [intervalRounds, setIntervalRounds] = useState(2);
+  const [intervalRounds, setIntervalRounds] = useState(3); // Default 3 rounds between predictions
   const [currentBetAmount, setCurrentBetAmount] = useState(0);
   const [activeTab, setActiveTab] = useState('dashboard');
   
@@ -190,7 +190,7 @@ export function SimplifiedDashboard() {
                       <div>
                         <p className="text-muted-foreground">Aguardando próximo sinal...</p>
                         <p className="text-xs text-muted-foreground mt-1">
-                          {colors.length < 10 ? `Coletando dados (${colors.length}/10)` : `Sistema pronto (${colors.length}/500 rodadas)`}
+                          {colors.length < 100 ? `Coletando dados (${colors.length}/100 mínimo)` : `Sistema pronto - Analisando ${colors.length}+ rodadas`}
                         </p>
                       </div>
                     )}
