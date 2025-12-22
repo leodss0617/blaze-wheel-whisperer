@@ -18,11 +18,15 @@ interface UsePredictionEngineProps {
   intervalRounds: number;
 }
 
+// Minimum rounds required before generating predictions
+const MINIMUM_ROUNDS_FOR_PREDICTION = 100;
+const ROUNDS_TO_ANALYZE = 1000;
+
 export function usePredictionEngine({ 
   colors, 
   numbers, 
   enabled, 
-  intervalRounds = 2 
+  intervalRounds = 3 // Default to 3 rounds between predictions
 }: UsePredictionEngineProps) {
   const { toast } = useToast();
   const { playAlertSound, playWhiteProtectionSound } = useAlertSound();
@@ -34,6 +38,7 @@ export function usePredictionEngine({
   const [stats, setStats] = useState({ wins: 0, losses: 0 });
   const [galeLevel, setGaleLevel] = useState<0 | 1 | 2>(0);
   const [predictionState, setPredictionState] = useState<PredictionState>('analyzing');
+  const [historicalRounds, setHistoricalRounds] = useState<{colors: Color[], numbers: number[]}>({ colors: [], numbers: [] });
   
   // Use refs for values that shouldn't trigger re-renders
   const lastRoundCount = useRef(0);
@@ -41,11 +46,46 @@ export function usePredictionEngine({
   const predictionRoundIndex = useRef<number | null>(null);
   const isAnalyzingRef = useRef(false);
   const currentSignalRef = useRef<PredictionSignal | null>(null);
+  const historicalLoaded = useRef(false);
   
   // Keep refs in sync with state
   useEffect(() => {
     currentSignalRef.current = currentSignal;
   }, [currentSignal]);
+  
+  // Load historical data from database (1000 rounds)
+  const loadHistoricalData = useCallback(async () => {
+    if (historicalLoaded.current) return;
+    
+    try {
+      console.log('📊 Carregando histórico de 1000 rodadas...');
+      const { data, error } = await supabase
+        .from('blaze_rounds')
+        .select('color, number')
+        .order('round_timestamp', { ascending: false })
+        .limit(ROUNDS_TO_ANALYZE);
+      
+      if (error) {
+        console.error('Error loading historical data:', error);
+        return;
+      }
+      
+      if (data && data.length > 0) {
+        const historicalColors = data.map(r => r.color as Color);
+        const historicalNumbers = data.map(r => r.number);
+        setHistoricalRounds({ colors: historicalColors, numbers: historicalNumbers });
+        historicalLoaded.current = true;
+        console.log(`✅ Histórico carregado: ${data.length} rodadas`);
+      }
+    } catch (err) {
+      console.error('Error loading historical data:', err);
+    }
+  }, []);
+  
+  // Load historical data on mount
+  useEffect(() => {
+    loadHistoricalData();
+  }, [loadHistoricalData]);
   
   // Load learned patterns from DB
   const loadLearnedPatterns = async (): Promise<LearnedPattern[]> => {
@@ -153,10 +193,15 @@ export function usePredictionEngine({
 
   // Generate prediction - using ref to prevent dependency issues
   const generateNewPrediction = useCallback(async () => {
-    // Use ref to check if already analyzing
-    if (colors.length < 10 || isAnalyzingRef.current) {
+    // Check minimum rounds - need at least 100 rounds of current session data
+    const totalRoundsAvailable = historicalRounds.colors.length + colors.length;
+    
+    if (totalRoundsAvailable < MINIMUM_ROUNDS_FOR_PREDICTION || isAnalyzingRef.current) {
       console.log('⏸️ Skipping prediction:', { 
-        colorsLength: colors.length, 
+        currentRounds: colors.length,
+        historicalRounds: historicalRounds.colors.length,
+        totalAvailable: totalRoundsAvailable,
+        minRequired: MINIMUM_ROUNDS_FOR_PREDICTION,
         isAnalyzing: isAnalyzingRef.current 
       });
       return null;
@@ -165,16 +210,23 @@ export function usePredictionEngine({
     isAnalyzingRef.current = true;
     setIsAnalyzing(true);
     
-    console.log('🔄 Gerando nova previsão...');
+    console.log('🔄 Gerando nova previsão com análise de', totalRoundsAvailable, 'rodadas...');
     
     try {
       const { hour, minute } = getBrasiliaTime();
       const learnedPatterns = await loadLearnedPatterns();
       
-      // Generate main color prediction
+      // Combine current rounds with historical data for analysis
+      // Use current rounds first (most recent), then historical
+      const analysisColors = [...colors, ...historicalRounds.colors].slice(0, ROUNDS_TO_ANALYZE);
+      const analysisNumbers = [...numbers, ...historicalRounds.numbers].slice(0, ROUNDS_TO_ANALYZE);
+      
+      console.log('📊 Analisando', analysisColors.length, 'rodadas para previsão');
+      
+      // Generate main color prediction using full history
       const result = generatePrediction({
-        colors,
-        numbers,
+        colors: analysisColors,
+        numbers: analysisNumbers,
         learnedPatterns,
         hour,
         minute
@@ -367,7 +419,17 @@ export function usePredictionEngine({
 
   // Effect: Check for prediction opportunity on each new round
   useEffect(() => {
-    if (!enabled || colors.length < 10) return;
+    const totalRoundsAvailable = historicalRounds.colors.length + colors.length;
+    
+    if (!enabled || totalRoundsAvailable < MINIMUM_ROUNDS_FOR_PREDICTION) {
+      console.log('⏸️ Aguardando dados suficientes:', {
+        currentRounds: colors.length,
+        historicalRounds: historicalRounds.colors.length,
+        totalAvailable: totalRoundsAvailable,
+        minRequired: MINIMUM_ROUNDS_FOR_PREDICTION
+      });
+      return;
+    }
     
     const currentCount = colors.length;
     const roundsSinceLastPrediction = currentCount - lastRoundCount.current;
@@ -376,6 +438,7 @@ export function usePredictionEngine({
       currentCount,
       lastRoundCount: lastRoundCount.current,
       roundsSince: roundsSinceLastPrediction,
+      intervalRequired: intervalRounds,
       hasPending: !!pendingVerification.current,
       hasSignal: !!currentSignalRef.current,
       isAnalyzing: isAnalyzingRef.current
@@ -399,16 +462,16 @@ export function usePredictionEngine({
       return;
     }
     
-    // Prediction every 2 rounds
-    const effectiveInterval = 2;
+    // Use configured interval (default 3 rounds)
+    const effectiveInterval = intervalRounds;
     
     // Check if it's time for new prediction
     if (roundsSinceLastPrediction >= effectiveInterval) {
-      console.log('🎯 Time for new prediction!');
+      console.log('🎯 Time for new prediction! Interval:', effectiveInterval, 'rodadas');
       lastRoundCount.current = currentCount;
       generateNewPrediction();
     }
-  }, [colors.length, enabled, generateNewPrediction, verifyPrediction]);
+  }, [colors.length, enabled, intervalRounds, historicalRounds.colors.length, generateNewPrediction, verifyPrediction]);
 
   return {
     currentSignal,
