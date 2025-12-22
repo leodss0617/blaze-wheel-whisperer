@@ -156,10 +156,11 @@ export function usePredictionEngine({
   // Update prediction result in DB by signal_timestamp (more reliable)
   const updatePredictionResult = async (signalTimestamp: Date, actualColor: Color, won: boolean) => {
     try {
+      // Use 'win'/'loss' to match database constraint (not 'won'/'lost')
       const { data, error } = await supabase
         .from('prediction_signals')
         .update({ 
-          status: won ? 'won' : 'lost',
+          status: won ? 'win' : 'loss',
           actual_result: actualColor,
           updated_at: new Date().toISOString()
         })
