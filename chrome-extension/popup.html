@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blaze Auto Bet</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <span class="logo-icon">🎯</span>
+        <span class="logo-text">Blaze Auto Bet</span>
+      </div>
+      <div class="status-indicator" id="connectionStatus">
+        <span class="status-dot"></span>
+        <span class="status-text">Desconectado</span>
+      </div>
+    </header>
+
+    <!-- Main Controls -->
+    <section class="section">
+      <h2>Controles</h2>
+      <div class="toggle-container">
+        <label class="toggle">
+          <input type="checkbox" id="autoBetEnabled">
+          <span class="toggle-slider"></span>
+        </label>
+        <span>Auto Bet Ativado</span>
+      </div>
+      <div class="toggle-container">
+        <label class="toggle">
+          <input type="checkbox" id="galeEnabled" checked>
+          <span class="toggle-slider"></span>
+        </label>
+        <span>Martingale (Gale) Ativado</span>
+      </div>
+    </section>
+
+    <!-- Bankroll Config -->
+    <section class="section">
+      <h2>💰 Configuração de Banca</h2>
+      <div class="input-group">
+        <label>Banca Atual (R$)</label>
+        <input type="number" id="currentBankroll" value="100" min="1" step="1">
+      </div>
+      <div class="input-group">
+        <label>Aposta Base (R$)</label>
+        <input type="number" id="baseBet" value="2" min="0.1" step="0.1">
+      </div>
+      <div class="input-group">
+        <label>Máximo de Gales</label>
+        <input type="number" id="maxGales" value="2" min="0" max="10">
+      </div>
+      <div class="input-group">
+        <label>Multiplicador Gale</label>
+        <input type="number" id="galeMultiplier" value="2" min="1.5" max="3" step="0.1">
+      </div>
+    </section>
+
+    <!-- Protection Config -->
+    <section class="section">
+      <h2>🛡️ Proteção de Banca</h2>
+      <div class="input-group">
+        <label>Stop Win (R$)</label>
+        <input type="number" id="stopWin" value="50" min="1" step="1">
+      </div>
+      <div class="input-group">
+        <label>Stop Loss (R$)</label>
+        <input type="number" id="stopLoss" value="30" min="1" step="1">
+      </div>
+      <div class="input-group">
+        <label>Confiança Mínima (%)</label>
+        <input type="number" id="minConfidence" value="70" min="50" max="100">
+      </div>
+    </section>
+
+    <!-- Prediction Server -->
+    <section class="section">
+      <h2>🔗 Servidor de Previsões</h2>
+      <div class="input-group">
+        <label>URL do Servidor</label>
+        <input type="text" id="serverUrl" placeholder="https://seu-servidor.com">
+      </div>
+      <div class="button-group">
+        <button id="connectBtn" class="btn btn-primary">Conectar</button>
+        <button id="testBtn" class="btn btn-secondary">Testar</button>
+      </div>
+    </section>
+
+    <!-- Current Status -->
+    <section class="section status-section">
+      <h2>📊 Status Atual</h2>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="stat-label">Lucro/Prejuízo</span>
+          <span class="stat-value" id="profitLoss">R$ 0,00</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Apostas Hoje</span>
+          <span class="stat-value" id="todayBets">0</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Win Rate</span>
+          <span class="stat-value" id="winRate">0%</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Gale Atual</span>
+          <span class="stat-value" id="currentGale">0</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Last Prediction -->
+    <section class="section">
+      <h2>🎯 Última Previsão</h2>
+      <div id="lastPrediction" class="prediction-box">
+        <span class="prediction-text">Aguardando...</span>
+      </div>
+    </section>
+
+    <!-- Actions -->
+    <section class="section">
+      <div class="button-group">
+        <button id="resetStatsBtn" class="btn btn-danger">Resetar Stats</button>
+        <button id="saveConfigBtn" class="btn btn-success">Salvar Config</button>
+      </div>
+    </section>
+
+    <!-- Log -->
+    <section class="section">
+      <h2>📋 Log de Atividades</h2>
+      <div id="logContainer" class="log-container">
+        <div class="log-entry">Sistema iniciado...</div>
+      </div>
+    </section>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
